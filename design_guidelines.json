@@ -1,0 +1,94 @@
+{
+  "theme": "LIGHT",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) mixed with Editorial Elegance",
+  "core_philosophy": "Digital Paper. A serious, high-fidelity research productivity tool. Precise structural UI chrome (like Arc/Linear) surrounding a high-legibility, focused academic editor (like Notion/Medium). NO purple/teal gradients. NO generic ChatGPT-clone bubbles. Use pure structural layout to guide focus.",
+  "colors": {
+    "backgrounds": {
+      "app_bg": "#f4f4f5",
+      "editor_paper": "#ffffff",
+      "sidebar_bg": "#fafafa",
+      "panel_bg": "#fcfcfc"
+    },
+    "text": {
+      "primary": "#18181b",
+      "secondary": "#71717a",
+      "tertiary": "#a1a1aa",
+      "brand_accent": "#0033A0"
+    },
+    "borders": {
+      "default": "#e4e4e7",
+      "focus": "#0033A0"
+    },
+    "accents": {
+      "primary": "#0033A0",
+      "primary_hover": "#002370",
+      "generating": "#d97706",
+      "success": "#059669"
+    }
+  },
+  "typography": {
+    "fonts": {
+      "ui_chrome": "IBM Plex Sans, sans-serif",
+      "editor_content": "Spectral, serif",
+      "data_code": "IBM Plex Mono, monospace"
+    },
+    "headings": {
+      "h1": "text-4xl tracking-tight font-semibold text-zinc-900",
+      "h2": "text-2xl tracking-tight font-medium text-zinc-800",
+      "h3": "text-xl font-medium text-zinc-800",
+      "block_title": "text-sm uppercase tracking-widest font-semibold text-zinc-500"
+    },
+    "body": {
+      "ui_text": "text-sm text-zinc-700 leading-tight",
+      "editor_text": "text-lg text-zinc-900 leading-relaxed font-serif",
+      "caption": "text-xs text-zinc-500"
+    }
+  },
+  "layout_spacing": {
+    "app_structure": "Three-column layout: Left Nav Sidebar (16rem), Main Editor Canvas (auto), Right Reference Panel (20rem). All divided by crisp 1px borders.",
+    "editor_canvas": "Centered, max-width 65ch (approx 800px). Generous vertical padding (py-24).",
+    "bento_grids": "For the dashboard library, use a dense 'Control Room' grid (grid-cols-1 md:grid-cols-3 lg:grid-cols-4) with gap-6.",
+    "spacing_scale": "Use 2x generous padding. Instead of p-4, use p-8 inside cards. Instead of gap-2, use gap-6 for macro layout."
+  },
+  "components_strategy": {
+    "buttons": "Flat, sharp corners (rounded-sm or rounded-none). No heavy drop shadows. 1px borders. Brand CTA uses deep #0033A0 with white text.",
+    "inputs": "Shadcn inputs customized. Border-b only (underlined) for high-end editorial feel, or crisp rectangular boxes (rounded-sm) with focus-visible:ring-1 focus-visible:ring-brand.",
+    "cards": "Cardless approach preferred. Use pure layout boundaries (1px border-b or right) rather than elevated shadow cards. For manuscript library items, use subtle border and hover:bg-zinc-50.",
+    "wizard_form": "Multi-step form with vertical timeline tracker on left, large textareas on right. Textareas should auto-grow and have a comfortable line-height.",
+    "manuscript_blocks": "The editor is split by section (Abstract, Intro, etc.). Each section is a distinct visual block. A block has a header with metadata (Status, Section Name) and actions (Regenerate, Copy, Edit).",
+    "sidebar": "Clean, dense. Hover states should feature a subtle left-border highlight in brand color rather than full background fills."
+  },
+  "states_and_motion": {
+    "generating_state": "When a section is generating, its background shifts to a subtle striped overlay or it features a pulsing left-border (amber/orange). Text streams in real-time.",
+    "complete_state": "Brief flash of subtle green (bg-emerald-50) transitioning to transparent.",
+    "hover_interactions": "Micro-translations (translate-x-1) for TOC links. Subtle opacity shifts (opacity-70 to opacity-100) for icons.",
+    "transitions": "Use 'transition-all duration-200 ease-out' universally for UI chrome."
+  },
+  "icons": {
+    "library": "lucide-react",
+    "style": "Stroke width 1.5, crisp and technical."
+  },
+  "image_urls": {
+    "hero_illustration": {
+      "url": "https://static.prod-images.emergentagent.com/jobs/68e5e7ec-0c3a-4f39-9e6f-4de5f69a381e/images/4e3e1a0213735aa06d1f3aa6a571141a4da09087d9bbc59de151719c59173b78.png",
+      "description": "Minimalist 3D geometric composition representing structured academic research, paper stacks, data nodes. Clean white and light grey background with sharp deep blue accents.",
+      "category": "landing_page_hero"
+    },
+    "placeholder_documents": {
+      "url": "https://images.pexels.com/photos/9572697/pexels-photo-9572697.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940",
+      "description": "Close-up of a hand reaching for a document on a desk",
+      "category": "marketing_feature_section"
+    }
+  },
+  "testing": {
+    "requirements": "All interactive and key informational elements MUST include a 'data-testid' attribute (e.g., data-testid='generate-section-button', data-testid='reference-search-input')."
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the pure layout/border approach (The 'Grid Borders' look). Avoid soft shadows or generic SaaS cards. Let typography and whitespace do the heavy lifting.",
+    "For the Editor section, use HTML structure that separates each manuscript section into its own isolated block component. This allows independent regeneration and status tracking per section.",
+    "Use 'IBM Plex Sans' for all UI menus, buttons, and sidebars, but MUST use 'Spectral' or similar serif for the actual generated manuscript text to simulate an academic journal.",
+    "Never use pure black or pure white unconditionally. Use the zinc scale provided to maintain a slightly softer, paper-like contrast.",
+    "Do not add emojis or generic gradient backgrounds.",
+    "Ensure the right sidebar reference panel can smoothly pull data and inject it directly into the active editor block."
+  ]
+}
