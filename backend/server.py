@@ -563,7 +563,7 @@ async def generate_section(
             api_key=EMERGENT_LLM_KEY,
             session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
             system_message=SYSTEM_PROMPT,
-        ).with_model("anthropic", "claude-sonnet-4-5-20250929")
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
         response_text = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(response_text, str):
             response_text = str(response_text)

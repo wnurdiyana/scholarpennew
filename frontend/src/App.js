@@ -1,14 +1,29 @@
 import "@/App.css";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
 import ProtectedRoute from "@/components/ProtectedRoute";
-import Landing from "@/pages/Landing";
 import { Login, Register } from "@/pages/Auth";
 import AuthCallback from "@/pages/AuthCallback";
 import Dashboard from "@/pages/Dashboard";
 import NewManuscript from "@/pages/NewManuscript";
 import Editor from "@/pages/Editor";
 import Settings from "@/pages/Settings";
+
+// Root redirector — sends authenticated users to /dashboard, anonymous to /login.
+const RootRedirect = () => {
+  const { user, loading } = useAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="text-center">
+          <div className="inline-block w-2 h-2 bg-[#0033A0] animate-pulse mb-3" />
+          <p className="text-xs font-mono uppercase tracking-widest text-zinc-500">Checking session…</p>
+        </div>
+      </div>
+    );
+  }
+  return <Navigate to={user ? "/dashboard" : "/login"} replace />;
+};
 
 const AppRouter = () => {
   const location = useLocation();
@@ -20,7 +35,7 @@ const AppRouter = () => {
 
   return (
     <Routes>
-      <Route path="/" element={<Landing />} />
+      <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/auth/callback" element={<AuthCallback />} />
