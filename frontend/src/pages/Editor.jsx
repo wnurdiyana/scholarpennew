@@ -370,8 +370,8 @@ const ReferencePanel = ({ manuscriptId }) => {
 
   const copyRef = async (r) => {
     const text = formatAPA(r);
-    await navigator.clipboard.writeText(text);
-    setCopied(r.doi || r.title);
+    const ok = await copyToClipboard(text);
+    setCopied(ok ? (r.doi || r.title) : `__fail__${r.doi || r.title}`);
     setTimeout(() => setCopied(null), 1500);
   };
 

@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 4 (final retest of copyRef fix). Verified the Reference panel copy button now uses the robust copyToClipboard helper from /app/frontend/src/lib/clipboard.js. Confirmed via grep that NO `navigator.clipboard` references remain in Editor.jsx — only the helper import. Ran the full happy-path Playwright flow exactly as specified in the review request and ALL acceptance criteria passed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_results": {
+    "login_demo_user": "PASS",
+    "navigate_to_manuscript_ms_cbc1b8ae6fda4a": "PASS (route is /manuscript/:id, not /editor/:id — used correct route)",
+    "reference_search_battery_thermal_runaway": "PASS (12 Crossref results)",
+    "copy_button_state_change": "PASS — text changed from 'Copy as APA' -> 'Copied APA' (real browser clipboard succeeded)",
+    "no_webpack_dev_server_overlay": "PASS — iframe NOT mounted",
+    "no_unhandled_promise_rejection": "PASS — pageerror listener captured 0 errors",
+    "toc_introduction_navigation_after_copy": "PASS — click succeeded, no overlay blocking"
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "copyToClipboard helper in /app/frontend/src/lib/clipboard.js is well-implemented: try/catch wraps navigator.clipboard, falls back to execCommand textarea trick, always returns boolean — never throws. This is the right pattern for sandboxed/iframe preview contexts.",
+    "Editor.jsx copyRef now correctly awaits the helper and branches UI state on the boolean (Copied APA / Copy blocked). Verified via grep that there are no remaining direct navigator.clipboard.writeText calls in Editor.jsx.",
+    "Note: The review request mentioned route '/editor/ms_cbc1b8ae6fda4a' but the actual route in App.js is '/manuscript/:id'. Not a bug — just an FYI in case future test specs need adjusting."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (skipped per request)", "frontend": "100%"},
+  "test_credentials": "demo@manuscriptforge.app / Demo123! — works correctly",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "copyRef bug is fully resolved. The button now shows 'Copied APA' in real browser and would show 'Copy blocked' in headless environments where execCommand also fails — either is acceptable. No further retesting required for this fix.",
+  "rca of the issue": "Previous iterations 1-3 found that copyRef in Editor.jsx was calling navigator.clipboard.writeText() directly, which throws an unhandled NotAllowedError inside sandboxed preview iframes, triggering the webpack-dev-server overlay. Fix: extracted a robust copyToClipboard helper that wraps the async API in try/catch and falls back to a hidden-textarea + document.execCommand('copy') path, always returning a boolean. copyRef now awaits this helper and renders the success or 'Copy blocked' state purely from the returned boolean — no exception ever escapes."
+}
