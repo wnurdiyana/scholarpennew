@@ -3,10 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  ArrowLeft, BookOpen, Check, ChevronDown, Copy, Download, Loader2, Pencil,
+  ArrowLeft, BookOpen, Check, ChevronDown, Copy, Download, Loader2, LogOut, Pencil,
   RefreshCw, Search, Sparkles, X,
 } from "lucide-react";
 import api, { API } from "@/lib/api";
+import { copyToClipboard } from "@/lib/clipboard";
+import { useAuth } from "@/context/AuthContext";
 
 const STATUS_META = {
   empty: { label: "Empty", color: "text-zinc-400" },
@@ -18,6 +20,7 @@ const STATUS_META = {
 const Editor = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
   const [catalog, setCatalog] = useState([]);
@@ -199,29 +202,41 @@ const Editor = () => {
             <div className="text-[10px] font-mono uppercase tracking-widest text-zinc-500 truncate">
               {doc.inputs?.field || "Field unspecified"} · {doc.inputs?.journal_target || "No target journal"} · {doc.inputs?.citation_style || "APA"}
             </div>
-            <div className="relative">
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <button
+                  onClick={() => setShowExport((v) => !v)}
+                  className="btn-ghost inline-flex items-center gap-2"
+                  disabled={exporting}
+                  data-testid="export-menu-btn"
+                >
+                  <Download className="w-3.5 h-3.5" /> Export <ChevronDown className="w-3 h-3" />
+                </button>
+                {showExport && (
+                  <div className="absolute right-0 mt-1 bg-white border border-zinc-200 shadow-sm w-44 z-20" data-testid="export-menu">
+                    {["md", "docx", "pdf"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => exportAs(f)}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-50 border-b last:border-b-0 border-zinc-100"
+                        data-testid={`export-${f}-btn`}
+                      >
+                        {f === "md" ? "Markdown (.md)" : f === "docx" ? "Word (.docx)" : "PDF (.pdf)"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button
-                onClick={() => setShowExport((v) => !v)}
-                className="btn-ghost inline-flex items-center gap-2"
-                disabled={exporting}
-                data-testid="export-menu-btn"
+                type="button"
+                onClick={async () => { await logout(); navigate("/"); }}
+                className="btn-ghost inline-flex items-center gap-1.5"
+                title={`Sign out (${user?.email || ""})`}
+                data-testid="editor-logout-btn"
               >
-                <Download className="w-3.5 h-3.5" /> Export <ChevronDown className="w-3 h-3" />
+                <LogOut className="w-3.5 h-3.5" />
+                <span className="hidden md:inline">Sign out</span>
               </button>
-              {showExport && (
-                <div className="absolute right-0 mt-1 bg-white border border-zinc-200 shadow-sm w-44 z-20" data-testid="export-menu">
-                  {["md", "docx", "pdf"].map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => exportAs(f)}
-                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-50 border-b last:border-b-0 border-zinc-100"
-                      data-testid={`export-${f}-btn`}
-                    >
-                      {f === "md" ? "Markdown (.md)" : f === "docx" ? "Word (.docx)" : "PDF (.pdf)"}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -259,7 +274,7 @@ const Editor = () => {
                     {s.content && !isEditing && (
                       <>
                         <button
-                          onClick={() => { navigator.clipboard.writeText(s.content); }}
+                          onClick={() => { copyToClipboard(s.content); }}
                           className="btn-ghost inline-flex items-center gap-1.5"
                           data-testid={`section-copy-${c.key}`}
                           title="Copy section"
@@ -394,8 +409,8 @@ const ReferencePanel = ({ manuscriptId }) => {
           <div className="px-5 py-8 text-[11px] text-zinc-500">No results yet. Try a topical query like "battery thermal runaway 2024".</div>
         ) : (
           <ul>
-            {results.map((r) => (
-              <li key={(r.doi || r.title) + Math.random()} className="px-5 py-4 border-b border-zinc-100 hover:bg-white transition-colors" data-testid="reference-item">
+            {results.map((r, idx) => (
+              <li key={`${r.doi || "no-doi"}-${idx}`} className="px-5 py-4 border-b border-zinc-100 hover:bg-white transition-colors" data-testid="reference-item">
                 <a
                   href={r.url || (r.doi ? `https://doi.org/${r.doi}` : "#")}
                   target="_blank" rel="noopener noreferrer"
@@ -413,7 +428,13 @@ const ReferencePanel = ({ manuscriptId }) => {
                   className="mt-2 inline-flex items-center gap-1 text-[11px] text-[#0033A0] hover:text-[#002370]"
                   data-testid="reference-copy-btn"
                 >
-                  {copied === (r.doi || r.title) ? <><Check className="w-3 h-3" /> Copied APA</> : <><Copy className="w-3 h-3" /> Copy as APA</>}
+                  {copied === (r.doi || r.title) ? (
+                    <><Check className="w-3 h-3" /> Copied APA</>
+                  ) : copied === `__fail__${r.doi || r.title}` ? (
+                    <><X className="w-3 h-3" /> Copy blocked</>
+                  ) : (
+                    <><Copy className="w-3 h-3" /> Copy as APA</>
+                  )}
                 </button>
               </li>
             ))}

@@ -1,0 +1,37 @@
+{
+  "summary": "Retest of 2 bug fixes + 1 design fix + regression. Results: 3 of 4 fixes verified. (1) BUG-FIX 1 (clipboard) is PARTIALLY FIXED — main agent created /app/frontend/src/lib/clipboard.js but did NOT wire it into copyRef. Editor.jsx line 373 still calls `await navigator.clipboard.writeText(text)` directly with no try/catch. Result: unhandled NotAllowedError still fires, webpack-dev-server-client-overlay iframe still mounts in dev mode, button text never changes from 'Copy as APA' to either 'Copied APA' or 'Copy blocked'. (2) BUG-FIX 2 (editor-logout-btn) PASS — button present in top toolbar, clicking signs the user out, mf_token is cleared, navigates to '/' and Sign in is visible. (3) DESIGN FIX (dashboard-loading testid) PASS — [data-testid=dashboard-loading] is rendered briefly and was caught by Playwright on reload. (4) REGRESSION PASS — login → dashboard → open existing manuscript (ms_cbc1b8ae6fda4a for demo@manuscriptforge.app) → editor renders 3-column layout (TOC + canvas + reference panel), pre-generated Abstract (1961 chars of real maritime fuel-consumption content) is still present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Editor.jsx > copyRef (reference panel)",
+        "issue": "Copy bug not actually fixed. /app/frontend/src/lib/clipboard.js was added but it is ONLY used at line 277 (section content copy). The actual reference-copy-btn handler `copyRef` at lines 371-376 still does `await navigator.clipboard.writeText(text)` directly — no try/catch, no fallback, no failure-state setter. Effect: (a) unhandled NotAllowedError still bubbles (PAGEERROR captured: 'Failed to execute writeText on Clipboard: Write permission denied'), (b) webpack-dev-server-client-overlay iframe still appears in dev preview, (c) button stays on 'Copy as APA' — the '__fail__' branch added to the JSX at line 433 is dead code because copyRef never calls setCopied(`__fail__${...}`). Fix: replace lines 371-376 with: `const copyRef = async (r) => { const text = formatAPA(r); const ok = await copyToClipboard(text); setCopied(ok ? (r.doi || r.title) : `__fail__${r.doi || r.title}`); setTimeout(() => setCopied(null), 1500); };`",
+        "selector": "[data-testid=reference-copy-btn]",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_3.json",
+    "/app/test_reports/screenshots/retest_failure.png"
+  ],
+  "action_items": [
+    "Wire the new copyToClipboard helper into copyRef in Editor.jsx (lines 371-376). The helper is imported and used by the section-content copy onClick at line 277, but the reference-panel copy button still calls navigator.clipboard.writeText directly — this is the exact unhandled-rejection path that caused iteration 2's failure. Without this change, the webpack overlay still mounts and the button never flips to 'Copied APA' / 'Copy blocked'.",
+    "(Optional cleanup) After wiring, the JSX `__fail__` branch (line 433-434) will become reachable; verify the 1500ms reset still applies to the failure state too (it does via the shared setTimeout)."
+  ],
+  "critical_code_review_comments": [
+    "The clipboard.js helper is good (try/catch + execCommand fallback + always-resolves boolean), but Editor.jsx only adopted it in one of the two call sites — the visible reference-copy-btn was missed. This is the higher-traffic of the two copy paths and the one called out in iteration 2.",
+    "Editor.jsx is still ~453 LOC mixing TOC, canvas, reference panel and export menu. Splitting ReferencePanel into its own file would have made this miss less likely (the copyRef + button JSX would live together).",
+    "PAGEERROR observed during test confirms the unhandled rejection path is still live — this is a verifiable regression of the iteration-2 finding."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested (passed iteration 1)", "frontend": "3 of 4 retest items pass (75%)"},
+  "test_credentials": "Used demo@manuscriptforge.app / Demo123! (has existing manuscript ms_cbc1b8ae6fda4a with 1961-char Abstract). Also available: test+1779263990@manuscriptforge.app / Test1234! (created in iteration 2). /app/memory/test_credentials.md is now populated.",
+  "seed_data_creation": "None this iteration — re-used existing demo manuscript.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Only 1 issue remains: copyRef in Editor.jsx (~line 371) must be switched from raw navigator.clipboard.writeText to copyToClipboard(text). After the fix, retest by: (1) login demo@manuscriptforge.app/Demo123!, (2) open existing manuscript, (3) Crossref search 'battery thermal runaway', (4) click [data-testid=reference-copy-btn] — expect button to change to 'Copied APA' (real browser) OR 'Copy blocked' (Playwright headless, graceful state). Either is acceptable per main-agent note. (5) Confirm no iframe#webpack-dev-server-client-overlay appears. (6) Confirm [data-testid=toc-introduction] still clickable. All other features (logout, dashboard-loading testid, abstract persistence, 3-column layout) verified working in this iteration.",
+  "rca of the issue": "Main agent created /app/frontend/src/lib/clipboard.js with a robust copyToClipboard helper (try/catch async API → textarea+execCommand fallback → boolean). It correctly imported and used the helper at Editor.jsx:277 for the per-section copy button. However, it forgot to update copyRef at Editor.jsx:371-376, which is the handler bound to the visible [data-testid=reference-copy-btn] in the Crossref reference panel. That function still does `await navigator.clipboard.writeText(text)` unguarded — so when Playwright (or any sandboxed/iframe context) denies clipboard write permission, the NotAllowedError remains unhandled, react-scripts' webpack-dev-server-client-overlay catches the unhandled rejection and overlays the viewport, and `setCopied` never runs so neither the 'Copied APA' nor the new 'Copy blocked' state is rendered. Reproduction: login as demo, open any manuscript, search Crossref, click the copy button — observe the red 'Uncaught runtime errors' overlay appear with 'Failed to execute writeText on Clipboard: Write permission denied'. Mitigation: 2-line edit — `const ok = await copyToClipboard(formatAPA(r)); setCopied(ok ? (r.doi || r.title) : `__fail__${r.doi || r.title}`);`"
+}

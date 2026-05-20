@@ -56,7 +56,7 @@ const Dashboard = () => {
 
         <div className="max-w-6xl mx-auto px-8 py-10">
           {loading ? (
-            <div className="text-sm font-mono uppercase tracking-widest text-zinc-500">Loading…</div>
+            <div className="text-sm font-mono uppercase tracking-widest text-zinc-500" data-testid="dashboard-loading">Loading…</div>
           ) : items.length === 0 ? (
             <EmptyState onCreate={() => navigate("/new")} />
           ) : (
