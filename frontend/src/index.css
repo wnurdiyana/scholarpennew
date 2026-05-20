@@ -1,115 +1,266 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Spectral:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --background: 0 0% 100%;
+  --foreground: 240 6% 10%;
+  --card: 0 0% 100%;
+  --card-foreground: 240 6% 10%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 240 6% 10%;
+  --primary: 220 100% 31%;            /* #0033A0 deep brand blue */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 5% 96%;
+  --secondary-foreground: 240 6% 10%;
+  --muted: 240 5% 96%;
+  --muted-foreground: 240 4% 46%;
+  --accent: 240 5% 96%;
+  --accent-foreground: 240 6% 10%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 6% 90%;
+  --input: 240 6% 90%;
+  --ring: 220 100% 31%;
+  --radius: 0.25rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html, body, #root {
+  background: #f4f4f5;
+  color: #18181b;
+}
+
 body {
-    margin: 0;
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
-        "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-        sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.005em;
 }
 
-code {
-    font-family:
-        source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+code, pre, .font-mono {
+  font-family: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-@layer base {
-    :root {
-        --background: 0 0% 100%;
-        --foreground: 0 0% 3.9%;
-        --card: 0 0% 100%;
-        --card-foreground: 0 0% 3.9%;
-        --popover: 0 0% 100%;
-        --popover-foreground: 0 0% 3.9%;
-        --primary: 0 0% 9%;
-        --primary-foreground: 0 0% 98%;
-        --secondary: 0 0% 96.1%;
-        --secondary-foreground: 0 0% 9%;
-        --muted: 0 0% 96.1%;
-        --muted-foreground: 0 0% 45.1%;
-        --accent: 0 0% 96.1%;
-        --accent-foreground: 0 0% 9%;
-        --destructive: 0 84.2% 60.2%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 89.8%;
-        --input: 0 0% 89.8%;
-        --ring: 0 0% 3.9%;
-        --chart-1: 12 76% 61%;
-        --chart-2: 173 58% 39%;
-        --chart-3: 197 37% 24%;
-        --chart-4: 43 74% 66%;
-        --chart-5: 27 87% 67%;
-        --radius: 0.5rem;
-    }
-    .dark {
-        --background: 0 0% 3.9%;
-        --foreground: 0 0% 98%;
-        --card: 0 0% 3.9%;
-        --card-foreground: 0 0% 98%;
-        --popover: 0 0% 3.9%;
-        --popover-foreground: 0 0% 98%;
-        --primary: 0 0% 98%;
-        --primary-foreground: 0 0% 9%;
-        --secondary: 0 0% 14.9%;
-        --secondary-foreground: 0 0% 98%;
-        --muted: 0 0% 14.9%;
-        --muted-foreground: 0 0% 63.9%;
-        --accent: 0 0% 14.9%;
-        --accent-foreground: 0 0% 98%;
-        --destructive: 0 62.8% 30.6%;
-        --destructive-foreground: 0 0% 98%;
-        --border: 0 0% 14.9%;
-        --input: 0 0% 14.9%;
-        --ring: 0 0% 83.1%;
-        --chart-1: 220 70% 50%;
-        --chart-2: 160 60% 45%;
-        --chart-3: 30 80% 55%;
-        --chart-4: 280 65% 60%;
-        --chart-5: 340 75% 55%;
-    }
+/* Manuscript editor typography — Spectral serif */
+.editor-prose {
+  font-family: 'Spectral', 'Georgia', serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: #18181b;
 }
 
-@layer base {
-    * {
-        @apply border-border;
-    }
-    body {
-        @apply bg-background text-foreground;
-    }
+.editor-prose h1, .editor-prose h2, .editor-prose h3, .editor-prose h4 {
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: #18181b;
+  margin-top: 1.6em;
+  margin-bottom: 0.6em;
+}
+.editor-prose h1 { font-size: 1.75rem; }
+.editor-prose h2 { font-size: 1.375rem; }
+.editor-prose h3 { font-size: 1.125rem; text-transform: uppercase; letter-spacing: 0.04em; color: #52525b; font-weight: 600; }
+.editor-prose p { margin: 0.85em 0; }
+.editor-prose strong { color: #0a0a0a; font-weight: 600; }
+.editor-prose em { font-style: italic; color: #3f3f46; }
+.editor-prose ul, .editor-prose ol { padding-left: 1.4em; margin: 0.85em 0; }
+.editor-prose li { margin: 0.3em 0; }
+.editor-prose blockquote {
+  border-left: 2px solid #0033A0;
+  padding-left: 1em;
+  color: #3f3f46;
+  font-style: italic;
+  margin: 1em 0;
+}
+.editor-prose code {
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 2px;
+  padding: 0 4px;
+  font-size: 0.9em;
+}
+.editor-prose pre {
+  background: #fafafa;
+  border: 1px solid #e4e4e7;
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+.editor-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.2em 0;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 0.875rem;
+}
+.editor-prose th, .editor-prose td {
+  border-bottom: 1px solid #e4e4e7;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.editor-prose th {
+  background: #fafafa;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: #52525b;
+  font-weight: 600;
+  border-bottom: 2px solid #18181b;
+}
+.editor-prose a { color: #0033A0; text-decoration: underline; text-underline-offset: 3px; }
+
+/* Generating state — pulsing left border */
+@keyframes ms-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.is-generating {
+  position: relative;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(217, 119, 6, 0.05) 0 12px,
+    transparent 12px 24px
+  );
+}
+.is-generating::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: #d97706;
+  animation: ms-pulse 1.4s ease-in-out infinite;
 }
 
-@layer base {
-    [data-debug-wrapper="true"] {
-        display: contents !important;
-    }
-
-    [data-debug-wrapper="true"] > * {
-        margin-left: inherit;
-        margin-right: inherit;
-        margin-top: inherit;
-        margin-bottom: inherit;
-        padding-left: inherit;
-        padding-right: inherit;
-        padding-top: inherit;
-        padding-bottom: inherit;
-        column-gap: inherit;
-        row-gap: inherit;
-        gap: inherit;
-        border-left-width: inherit;
-        border-right-width: inherit;
-        border-top-width: inherit;
-        border-bottom-width: inherit;
-        border-left-style: inherit;
-        border-right-style: inherit;
-        border-top-style: inherit;
-        border-bottom-style: inherit;
-        border-left-color: inherit;
-        border-right-color: inherit;
-        border-top-color: inherit;
-        border-bottom-color: inherit;
-    }
+@keyframes ms-flash {
+  0% { background-color: rgba(16, 185, 129, 0.18); }
+  100% { background-color: transparent; }
 }
+.just-completed { animation: ms-flash 1.4s ease-out 1; }
+
+/* Sidebar TOC hover micro-interaction */
+.toc-link {
+  position: relative;
+  transition: transform 200ms ease-out, color 200ms ease-out;
+}
+.toc-link:hover { transform: translateX(2px); color: #0033A0; }
+.toc-link[data-active="true"] {
+  color: #0033A0;
+  font-weight: 600;
+}
+.toc-link[data-active="true"]::before {
+  content: '';
+  position: absolute;
+  left: -10px; top: 4px; bottom: 4px;
+  width: 2px;
+  background: #0033A0;
+}
+
+/* Marketing hero grain */
+.grain {
+  position: absolute; inset: 0;
+  opacity: 0.06; pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* Custom focus ring */
+.focus-ring:focus-visible {
+  outline: 2px solid #0033A0;
+  outline-offset: 2px;
+}
+
+/* Selection */
+::selection { background: rgba(0, 51, 160, 0.18); color: #0a0a0a; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 0; }
+::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Underlined input style */
+.under-input {
+  border: none;
+  border-bottom: 1px solid #d4d4d8;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+  font-family: 'IBM Plex Sans', sans-serif;
+  width: 100%;
+  font-size: 0.9375rem;
+  color: #18181b;
+}
+.under-input:focus { outline: none; border-bottom-color: #0033A0; }
+
+/* App layout shells */
+.app-shell {
+  display: grid;
+  grid-template-columns: 16rem 1fr;
+  min-height: 100vh;
+  background: #f4f4f5;
+}
+.editor-shell {
+  display: grid;
+  grid-template-columns: 16rem 1fr 20rem;
+  min-height: 100vh;
+  background: #f4f4f5;
+}
+@media (max-width: 1100px) {
+  .editor-shell { grid-template-columns: 14rem 1fr; }
+  .editor-shell .ref-panel { display: none; }
+}
+@media (max-width: 768px) {
+  .app-shell, .editor-shell { grid-template-columns: 1fr; }
+  .app-shell .left-nav, .editor-shell .left-nav { display: none; }
+}
+
+/* Section block hover */
+.section-block { transition: background-color 200ms ease-out; }
+.section-block:hover { background-color: #fcfcfc; }
+
+/* No emoji icon container */
+.icon-square {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  border: 1px solid #e4e4e7;
+  background: #ffffff;
+  color: #18181b;
+  border-radius: 2px;
+}
+
+/* Brand button */
+.btn-brand {
+  background: #0033A0;
+  color: #fff;
+  border: 1px solid #0033A0;
+  padding: 0.55rem 1.1rem;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: 2px;
+  font-size: 0.875rem;
+  transition: background-color 200ms ease-out, transform 200ms ease-out;
+}
+.btn-brand:hover { background: #002370; }
+.btn-brand:disabled { background: #a1a1aa; border-color: #a1a1aa; cursor: not-allowed; }
+
+.btn-ghost {
+  background: transparent;
+  color: #18181b;
+  border: 1px solid #e4e4e7;
+  padding: 0.5rem 0.95rem;
+  font-weight: 500;
+  border-radius: 2px;
+  font-size: 0.8125rem;
+  transition: background-color 200ms ease-out, border-color 200ms ease-out;
+}
+.btn-ghost:hover { background: #fafafa; border-color: #d4d4d8; }

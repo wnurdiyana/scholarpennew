@@ -1,0 +1,41 @@
+{
+  "summary": "Backend-only testing for ManuscriptForge. 23/23 pytest cases passed including health, JWT auth (register/login/me/logout), Google session error handling, manuscripts CRUD (with cross-user isolation), section generation for 'abstract' via Claude Sonnet 4.5 (>500 chars, persisted), invalid section key (400), Crossref reference search, and exports for md/docx/pdf plus invalid format (400).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/manuscripts", "issue": "N+1 query: re-fetches each manuscript with sections to compute generated_sections count. Use Mongo aggregation or include sections in initial projection."},
+      {"endpoint": "POST /api/auth/logout", "issue": "Returns 200 even when called without any token / with a JWT token (JWT is stateless and not invalidated). Acceptable but could mislead callers — consider documenting or returning a different response when no session was deleted."},
+      {"endpoint": "POST /api/auth/google/session", "issue": "On upstream non-200, raises 401 with detail 'Invalid Google session' — fine. But session_token is stored as plaintext (matches Emergent pattern). Acceptable."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "(Optional/Low) Optimize GET /api/manuscripts listing to avoid per-item extra Mongo query.",
+    "(Optional) Add rate-limiting / size guards around section generation endpoint (currently no protection against repeated long LLM calls).",
+    "(Optional) Consider returning manuscript_id immediately and streaming section generation via SSE/WebSocket — current sync call can hold the connection 30-90s."
+  ],
+  "critical_code_review_comments": [
+    "JWT_SECRET in /app/backend/.env still contains the literal 'change-in-production' string — fine for preview, must be rotated for prod.",
+    "server.py is ~810 lines; consider splitting into modules (auth.py, manuscripts.py, generation.py, references.py, export.py) per the >700 LOC guideline.",
+    "Section generation endpoint is fully synchronous; for 20 sections × ~60s this is brittle. A background-job / status-polling pattern would scale better.",
+    "CORS_ORIGINS defaults to '*' with allow_credentials=True — browsers will reject credentialed requests with wildcard origin. Either restrict origins or set allow_credentials=False.",
+    "_user_from_session_token compares datetime strings — works because ISO-8601 is monotone, but consider storing native datetimes for clarity.",
+    "All Mongo reads correctly exclude _id ({_id: 0}) — good.",
+    "Pydantic validation, HTTP status codes (400/401/404/502), and env-driven config are all clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (new)",
+    "/app/test_reports/pytest/pytest_results.xml (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "not tested"},
+  "test_credentials": "demo@manuscriptforge.app / Demo123! (verified working). /app/memory/test_credentials.md is currently empty — main agent should populate it.",
+  "seed_data_creation": "Tests create and clean up TEST_-prefixed manuscripts. They also register ephemeral users (test_<uuid>@..., other_<uuid>@...) which are NOT cleaned up — left in DB intentionally for re-run isolation. Demo manuscript test data is deleted at end of run.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Use /app/backend/tests/backend_test.py as the regression suite. Demo user: demo@manuscriptforge.app / Demo123!. The 'test_generate_abstract' case hits the real Emergent LLM (Claude Sonnet 4.5) and took ~10s in this run but may take 30-90s. JUnit XML at /app/test_reports/pytest/pytest_results.xml.",
+  "rca of the issue": "No bugs found in backend. All 16 requested feature tests passed."
+}
