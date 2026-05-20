@@ -1,0 +1,46 @@
+{
+  "summary": "Frontend e2e testing for ManuscriptForge using Playwright. 17/19 listed feature checks PASSED end-to-end (landing, register, dashboard, 5-step wizard, editor 3-column layout with 20-section TOC, Crossref search, export menu+MD download, real Claude Sonnet 4.5 Abstract generation in ~12s, section edit/save, logout, unauth redirects for /dashboard and /manuscript/:id, login, persistence of edited content across sessions, typography IBM Plex Sans + Spectral). 2 issues found: (1) BUG - 'Copy as APA' silently fails: navigator.clipboard.writeText rejects with NotAllowedError in headless/sandboxed contexts; unhandled rejection bubbles up, triggering webpack-dev-server overlay that blocks subsequent UI clicks. Button text never changes to 'Copied APA'. (2) Editor page omits the shared Sidebar component so there is no logout/dashboard-shortcut button while inside the editor (only a 'back-to-dashboard' arrow).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Editor.jsx > copyRef (reference panel)", "issue": "navigator.clipboard.writeText not wrapped in try/catch and not awaited safely. On failure (e.g. iframe/headless/no-permission), the unhandled rejection bubbles, the visible 'Copied APA' confirmation never appears, AND in dev mode the webpack overlay blocks further clicks. Same pattern on line 262 for section content copy.", "selector": "[data-testid=reference-copy-btn]", "priority": "HIGH"},
+      {"component": "Editor.jsx page", "issue": "Does not render the shared Sidebar component, so there is no sidebar-logout-btn / nav while editing a manuscript. Logout requires navigating back to /dashboard first.", "selector": "[data-testid=sidebar-logout-btn]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard (just after registration / after login)", "issues": ["No skeleton/data-testid for the loading state; the page briefly shows literal 'LOADING…' text. A data-testid='dashboard-loading' or a real skeleton would improve UX and testability."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/screenshots/landing.png",
+    "/app/test_reports/screenshots/register.png",
+    "/app/test_reports/screenshots/dashboard-empty.png",
+    "/app/test_reports/screenshots/wizard-step1.png",
+    "/app/test_reports/screenshots/wizard-step5.png",
+    "/app/test_reports/screenshots/editor-fresh.png",
+    "/app/test_reports/screenshots/reference-results.png",
+    "/app/test_reports/screenshots/export-menu.png",
+    "/app/test_reports/screenshots/failure.png"
+  ],
+  "action_items": [
+    "Fix Editor.jsx copyRef + section-copy onClick: wrap navigator.clipboard.writeText in try/catch with a fallback (document.execCommand('copy') or a textarea+select fallback). Always call setCopied even on failure or surface a small error toast. This will (a) restore the 'Copied APA' confirmation in normal browsers and (b) stop the dev-server overlay from intercepting later clicks in test/preview.",
+    "Consider adding the shared Sidebar (or at least a logout button) inside Editor.jsx so users don't have to navigate to /dashboard to log out.",
+    "Add a proper loading state with a data-testid (e.g. 'dashboard-loading') instead of plain 'Loading…' text — improves UX and reliability of tests.",
+    "(Optional) Dashboard empty-state vs cards is racy: test agents must wait for the LOADING text to disappear. Document this or render a skeleton."
+  ],
+  "critical_code_review_comments": [
+    "Editor.jsx is ~432 LOC and mixes the editor canvas, TOC, ref panel, export menu, and section CRUD. Splitting into EditorCanvas / TocSidebar / ReferencePanel / ExportMenu would keep each file <250 LOC.",
+    "Unhandled promise rejections from clipboard / fetch in Editor.jsx (copyRef, copy-section onClick) are anti-pattern; wrap or use .catch().",
+    "Reference list uses key={(r.doi || r.title) + Math.random()} which regenerates keys on every render and prevents React from reconciling – minor perf hit and flicker risk on long lists.",
+    "Editor.jsx hides the global Sidebar so navigation/logout is inconsistent with the rest of the app.",
+    "Dashboard.jsx renders raw 'Loading…' text instead of a proper skeleton; add data-testid for tests."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not retested (passed in iteration 1)", "frontend": "~90% (17/19 features fully verified, 1 high-priority UI bug, 1 medium UX gap)"},
+  "test_credentials": "Created test+1779263990@manuscriptforge.app / Test1234! (QA Tester). Existing demo: demo@manuscriptforge.app / Demo123!. /app/memory/test_credentials.md is still empty — main agent should populate.",
+  "seed_data_creation": "Created 1 manuscript ms_937d922a8f5648 ('QA Test Manuscript') under test+1779263990@manuscriptforge.app with section Abstract drafted (later overridden with 'EDITED ABSTRACT: QA-edited content.'). Not cleaned up — left for next agent to reuse for persistence verification.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Login as test+1779263990@manuscriptforge.app / Test1234! to find existing manuscript ms_937d922a8f5648 with Abstract already drafted. Abstract generation via real Claude Sonnet 4.5 took ~12s in this run. Dashboard has a brief LOADING state — wait for it to clear before asserting manuscript count. Reference panel 'Copy as APA' relies on navigator.clipboard which fails in headless Playwright; do not test the visible state-change unless the main agent has added a fallback. Editor page does NOT include the Sidebar, so sidebar-logout-btn is only available on Dashboard / New / Settings pages.",
+  "rca of the issue": "Copy-as-APA bug RCA: In /app/frontend/src/pages/Editor.jsx, copyRef (line ~356) and the inline section-copy onClick (line 262) call `await navigator.clipboard.writeText(...)` with no try/catch. In any sandboxed/headless context (Playwright, embedded preview iframes, Safari without user gesture, etc.) the Clipboard API rejects with NotAllowedError. Because the rejection isn't handled: (a) `setCopied(...)` never runs so the button stays on 'Copy as APA' and never flips to 'Copied APA', (b) the unhandled promise rejection is caught by react-scripts/webpack-dev-server-client-overlay which mounts a full-viewport iframe overlay that then intercepts all subsequent pointer events (we observed every later click being blocked by '<iframe ... id=\"webpack-dev-server-client-overlay\">'). Mitigation: wrap in try/catch, on failure use a textarea+document.execCommand('copy') fallback, and still toggle the 'Copied APA' visual feedback so users get confirmation."
+}
