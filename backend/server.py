@@ -19,20 +19,33 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import base64
 import bcrypt
 import httpx
 import jwt
 from dotenv import load_dotenv
-from fastapi import APIRouter, Cookie, Depends, FastAPI, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Cookie, Depends, FastAPI, File, Form, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
 # Optional integrations
-from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
+from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage  # type: ignore
 
 from exporters import assemble_markdown, build_docx, build_pdf
+from datalab import (
+    DATA_SUGGEST_SYSTEM,
+    FIGURE_CRITIQUE_SYSTEM,
+    PLOT_TYPES,
+    find_dataset_path,
+    load_dataframe,
+    parse_json_object as dl_parse_json,
+    render_plot,
+    save_dataset,
+    summarize_dataframe,
+    summary_to_llm_text,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -776,6 +789,252 @@ Respond ONLY with the single-line JSON object specified in your system instructi
         "reply": reply_text,
         "content_updated": bool(updated),
     }
+
+
+# ---------- Data Lab: dataset upload, suggestions, plotting, figure critique ----------
+class DataSuggestIn(BaseModel):
+    dataset_id: str
+    focus: Optional[str] = ""
+
+
+class DataPlotIn(BaseModel):
+    dataset_id: str
+    plot_type: str
+    x: Optional[str] = None
+    y: Optional[str] = None
+    hue: Optional[str] = None
+    title: Optional[str] = None
+
+
+@api.post("/manuscripts/{mid}/datalab/upload")
+async def datalab_upload(
+    mid: str,
+    file: UploadFile = File(...),
+    user: Dict[str, Any] = Depends(current_user),
+):
+    doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    filename = file.filename or "dataset.csv"
+    ext = (filename.rsplit(".", 1)[-1] or "").lower()
+    if ext not in {"csv", "tsv", "txt", "xlsx", "xls", "xlsm"}:
+        raise HTTPException(status_code=400, detail="Unsupported file type. Use CSV, TSV, or Excel.")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    try:
+        dataset_id, path = save_dataset(user["user_id"], filename, content)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        df = load_dataframe(path)
+    except Exception as e:
+        path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Could not parse file: {e}")
+
+    summary = summarize_dataframe(df)
+
+    # Persist a lightweight reference on the manuscript so user can find it later
+    record = {
+        "dataset_id": dataset_id,
+        "filename": filename,
+        "uploaded_at": _iso(_now()),
+        "rows": summary["shape"]["rows"],
+        "cols": summary["shape"]["cols"],
+    }
+    await db.manuscripts.update_one(
+        {"manuscript_id": mid},
+        {"$push": {"datasets": record}, "$set": {"updated_at": _iso(_now())}},
+    )
+
+    return {"dataset_id": dataset_id, "filename": filename, "summary": summary}
+
+
+@api.post("/manuscripts/{mid}/datalab/suggest")
+async def datalab_suggest(
+    mid: str,
+    payload: DataSuggestIn,
+    user: Dict[str, Any] = Depends(current_user),
+):
+    doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    path = find_dataset_path(user["user_id"], payload.dataset_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    df = load_dataframe(path)
+    summary = summarize_dataframe(df)
+
+    journal = (doc.get("inputs") or {}).get("journal_target") or "a high-impact Q1 WoS-indexed journal"
+    field = (doc.get("inputs") or {}).get("field") or "(unspecified field)"
+    focus = (payload.focus or "").strip() or "publication impact and reviewer expectations"
+    prompt = f"""# Manuscript context
+Target journal: {journal}
+Field: {field}
+Author focus: {focus}
+
+# Dataset summary
+{summary_to_llm_text(summary, path.name)}
+
+Allowed plot_type values: boxplot, violin, histogram, scatter, bar, correlation_heatmap, line.
+
+Return the strict JSON object now."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"datasuggest:{mid}:{uuid.uuid4().hex[:6]}",
+            system_message=DATA_SUGGEST_SYSTEM,
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        raw = await chat.send_message(UserMessage(text=prompt))
+        if not isinstance(raw, str):
+            raw = str(raw)
+    except Exception as exc:
+        logger.exception("DataLab suggest failed")
+        raise HTTPException(status_code=502, detail=f"Suggestion failed: {exc}")
+
+    parsed = dl_parse_json(raw) or {}
+    return {
+        "dataset_id": payload.dataset_id,
+        "analyses": parsed.get("analyses", []),
+        "figures": parsed.get("figures", []),
+        "missing_analyses": parsed.get("missing_analyses", []),
+        "impact_notes": parsed.get("impact_notes", ""),
+        "raw_summary": summary,
+    }
+
+
+@api.post("/manuscripts/{mid}/datalab/plot")
+async def datalab_plot(
+    mid: str,
+    payload: DataPlotIn,
+    user: Dict[str, Any] = Depends(current_user),
+):
+    doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    if payload.plot_type not in PLOT_TYPES:
+        raise HTTPException(status_code=400, detail=f"Unsupported plot_type. Allowed: {sorted(PLOT_TYPES)}")
+
+    path = find_dataset_path(user["user_id"], payload.dataset_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    df = load_dataframe(path)
+
+    try:
+        result = render_plot(df, payload.plot_type, x=payload.x, y=payload.y, hue=payload.hue, title=payload.title)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Plot rendering failed")
+        raise HTTPException(status_code=500, detail=f"Plot failed: {e}")
+
+    return result
+
+
+@api.post("/manuscripts/{mid}/figure/critique")
+async def figure_critique(
+    mid: str,
+    image: UploadFile = File(...),
+    dataset_id: Optional[str] = Form(default=None),
+    user: Dict[str, Any] = Depends(current_user),
+):
+    doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    raw_bytes = await image.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="Empty image")
+    if len(raw_bytes) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Image too large (max 8 MB)")
+
+    image_b64 = base64.b64encode(raw_bytes).decode("ascii")
+
+    # Optional dataset context
+    dataset_context = "_(no dataset attached — judge from image alone)_"
+    df = None
+    if dataset_id:
+        path = find_dataset_path(user["user_id"], dataset_id)
+        if path:
+            try:
+                df = load_dataframe(path)
+                summary = summarize_dataframe(df)
+                dataset_context = summary_to_llm_text(summary, path.name)
+            except Exception:
+                df = None
+
+    journal = (doc.get("inputs") or {}).get("journal_target") or "a high-impact Q1 WoS-indexed journal"
+    field = (doc.get("inputs") or {}).get("field") or "(unspecified field)"
+    prompt = f"""# Manuscript context
+Target journal: {journal}
+Field: {field}
+
+# Attached dataset (if any)
+{dataset_context}
+
+Allowed suggested_replacement.plot_type values: boxplot, violin, histogram, scatter, bar, correlation_heatmap, line, none.
+
+Critique the uploaded figure and return the strict JSON object now."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"figcritique:{mid}:{uuid.uuid4().hex[:6]}",
+            system_message=FIGURE_CRITIQUE_SYSTEM,
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        raw = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)]))
+        if not isinstance(raw, str):
+            raw = str(raw)
+    except Exception as exc:
+        logger.exception("Figure critique failed")
+        raise HTTPException(status_code=502, detail=f"Critique failed: {exc}")
+
+    parsed = dl_parse_json(raw) or {}
+    replacement = parsed.get("suggested_replacement") or {}
+
+    # If the AI proposed a concrete replacement plot AND we have a dataset, render it server-side.
+    replacement_plot = None
+    if df is not None and isinstance(replacement, dict):
+        ptype = (replacement.get("plot_type") or "").strip().lower()
+        if ptype in PLOT_TYPES:
+            try:
+                replacement_plot = render_plot(
+                    df,
+                    ptype,
+                    x=replacement.get("x"),
+                    y=replacement.get("y"),
+                    hue=replacement.get("hue"),
+                    title=replacement.get("title"),
+                )
+            except Exception:
+                replacement_plot = None
+
+    return {
+        "critique": parsed.get("critique", ""),
+        "improvements": parsed.get("improvements", []),
+        "suggested_replacement": replacement,
+        "additional_analyses": parsed.get("additional_analyses", []),
+        "impact_notes": parsed.get("impact_notes", ""),
+        "replacement_plot": replacement_plot,  # {plot_base64, plot_type, caption} or null
+    }
+
+
+@api.get("/manuscripts/{mid}/datalab/datasets")
+async def datalab_list_datasets(mid: str, user: Dict[str, Any] = Depends(current_user)):
+    doc = await db.manuscripts.find_one(
+        {"manuscript_id": mid, "user_id": user["user_id"]},
+        {"_id": 0, "datasets": 1},
+    )
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+    return {"datasets": doc.get("datasets", [])}
 
 
 # ---------- References (Crossref) ----------

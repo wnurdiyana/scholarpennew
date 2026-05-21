@@ -10,6 +10,7 @@ import api, { API } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useAuth } from "@/context/AuthContext";
 import SectionChat from "@/components/SectionChat";
+import DataLab from "@/components/DataLab";
 
 const STATUS_META = {
   empty: { label: "Empty", color: "text-zinc-400" },
@@ -98,6 +99,22 @@ const Editor = () => {
       setEditText("");
     } catch (e) {
       alert(e?.response?.data?.detail || "Save failed");
+    }
+  };
+
+  // Append markdown to a section's content via PATCH (used by Data Lab insertions).
+  const appendToSection = async (key, markdown) => {
+    const current = (doc?.sections?.[key]?.content || "").replace(/\s+$/, "");
+    const newContent = current + (current ? "\n\n" : "") + markdown.trim() + "\n";
+    try {
+      const { data } = await api.patch(`/manuscripts/${id}`, {
+        section_overrides: { [key]: newContent },
+      });
+      setDoc(data);
+      setJustCompleted(key);
+      setTimeout(() => setJustCompleted(null), 1500);
+    } catch (e) {
+      alert(e?.response?.data?.detail || "Insert failed");
     }
   };
 
@@ -321,6 +338,13 @@ const Editor = () => {
                   <div className="text-sm text-zinc-500 italic" data-testid={`section-empty-${c.key}`}>
                     Section not generated yet. Click <strong>Generate</strong> to draft this section using Claude Opus 4.5.
                   </div>
+                )}
+
+                {!isEditing && c.key === "results" && (
+                  <DataLab
+                    manuscriptId={id}
+                    onInsertIntoSection={({ markdown }) => appendToSection("results", markdown)}
+                  />
                 )}
 
                 {!isEditing && (
