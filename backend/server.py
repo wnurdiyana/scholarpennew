@@ -32,6 +32,8 @@ from starlette.middleware.cors import CORSMiddleware
 # Optional integrations
 from emergentintegrations.llm.chat import LlmChat, UserMessage  # type: ignore
 
+from exporters import assemble_markdown, build_docx, build_pdf
+
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
@@ -443,6 +445,8 @@ Hard rules:
 - Prefer 2021–2026 literature; foundational works permitted when cited as such.
 - Do not use undefined abbreviations; expand on first use.
 - Output clean Markdown only. Do not wrap output in code fences. Do not preface or append meta-commentary.
+- For any sub-topic / sub-section inside a section, ALWAYS use Markdown heading syntax (`### Sub-heading`, `#### Sub-sub-heading`), never bold paragraphs (`**...**`). The exporter relies on these headings to produce hierarchical numbering (e.g. 4.1, 4.1.1).
+- For multi-item ordered lists (e.g. ranked alternative titles, numbered objectives), put items on consecutive lines with NO blank lines between them.
 """
 
 
@@ -654,100 +658,6 @@ async def reference_search(q: str = Query(..., min_length=2), rows: int = 10, us
 
 
 # ---------- Export ----------
-def _assemble_markdown(doc: Dict[str, Any]) -> str:
-    title = doc.get("title") or "Untitled Manuscript"
-    parts: List[str] = [f"# {title}\n"]
-    sections = doc.get("sections", {})
-    for k in SECTION_KEYS:
-        s = sections.get(k, {})
-        content = (s.get("content") or "").strip()
-        if not content:
-            continue
-        parts.append(f"\n\n## {SECTION_LABELS[k]}\n\n{content}\n")
-    return "".join(parts)
-
-
-def _build_docx(doc: Dict[str, Any]) -> bytes:
-    from docx import Document
-    from docx.shared import Pt
-
-    document = Document()
-    style = document.styles["Normal"]
-    style.font.name = "Georgia"
-    style.font.size = Pt(11)
-
-    document.add_heading(doc.get("title") or "Untitled Manuscript", level=0)
-
-    sections = doc.get("sections", {})
-    for k in SECTION_KEYS:
-        s = sections.get(k, {})
-        content = (s.get("content") or "").strip()
-        if not content:
-            continue
-        document.add_heading(SECTION_LABELS[k], level=1)
-        # Simple paragraph splitting; preserve tables as raw markdown text blocks.
-        for block in content.split("\n\n"):
-            block = block.strip()
-            if not block:
-                continue
-            if block.startswith("### "):
-                document.add_heading(block[4:].strip(), level=3)
-            elif block.startswith("## "):
-                document.add_heading(block[3:].strip(), level=2)
-            elif block.startswith("# "):
-                document.add_heading(block[2:].strip(), level=1)
-            else:
-                document.add_paragraph(block)
-
-    buf = io.BytesIO()
-    document.save(buf)
-    return buf.getvalue()
-
-
-def _build_pdf(doc: Dict[str, Any]) -> bytes:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.units import cm
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
-
-    buf = io.BytesIO()
-    pdf = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=2.2 * cm,
-        rightMargin=2.2 * cm,
-        topMargin=2.0 * cm,
-        bottomMargin=2.0 * cm,
-    )
-    styles = getSampleStyleSheet()
-    h1 = ParagraphStyle("h1", parent=styles["Heading1"], fontName="Times-Bold", fontSize=18, spaceAfter=12)
-    h2 = ParagraphStyle("h2", parent=styles["Heading2"], fontName="Times-Bold", fontSize=14, spaceAfter=8)
-    body = ParagraphStyle("body", parent=styles["BodyText"], fontName="Times-Roman", fontSize=11, leading=15, spaceAfter=8)
-
-    story = [Paragraph(doc.get("title") or "Untitled Manuscript", h1), Spacer(1, 0.4 * cm)]
-    sections = doc.get("sections", {})
-    for k in SECTION_KEYS:
-        s = sections.get(k, {})
-        content = (s.get("content") or "").strip()
-        if not content:
-            continue
-        story.append(Paragraph(SECTION_LABELS[k], h2))
-        for block in content.split("\n\n"):
-            block = block.strip()
-            if not block:
-                continue
-            # Escape minimal HTML chars
-            safe = block.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            # Convert markdown bold
-            safe = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", safe)
-            safe = re.sub(r"\*(.+?)\*", r"<i>\1</i>", safe)
-            safe = safe.replace("\n", "<br/>")
-            story.append(Paragraph(safe, body))
-
-    pdf.build(story)
-    return buf.getvalue()
-
-
 @api.get("/manuscripts/{mid}/export")
 async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str, Any] = Depends(current_user)):
     doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
@@ -758,21 +668,21 @@ async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str,
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", (doc.get("title") or "manuscript"))[:60] or "manuscript"
 
     if fmt in ("md", "markdown"):
-        content = _assemble_markdown(doc).encode("utf-8")
+        content = assemble_markdown(doc, SECTION_KEYS, SECTION_LABELS).encode("utf-8")
         return StreamingResponse(
             io.BytesIO(content),
             media_type="text/markdown",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}.md"'},
         )
     if fmt == "docx":
-        data = _build_docx(doc)
+        data = build_docx(doc, SECTION_KEYS, SECTION_LABELS)
         return StreamingResponse(
             io.BytesIO(data),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             headers={"Content-Disposition": f'attachment; filename="{safe_name}.docx"'},
         )
     if fmt == "pdf":
-        data = _build_pdf(doc)
+        data = build_pdf(doc, SECTION_KEYS, SECTION_LABELS)
         return StreamingResponse(
             io.BytesIO(data),
             media_type="application/pdf",
