@@ -62,8 +62,6 @@ SECTION_KEYS = [
     "keywords",
     "introduction",
     "literature_review",
-    "research_gap",
-    "novelty",
     "methodology",
     "experimental_setup",
     "math_modeling",
@@ -83,10 +81,8 @@ SECTION_LABELS = {
     "title": "Title (with 5 alternatives)",
     "abstract": "Abstract",
     "keywords": "Keywords",
-    "introduction": "Introduction",
+    "introduction": "Introduction (with Research Gap & Novelty)",
     "literature_review": "Literature Review",
-    "research_gap": "Research Gap",
-    "novelty": "Novelty Statement",
     "methodology": "Methodology",
     "experimental_setup": "Experimental Setup",
     "math_modeling": "Mathematical / Statistical Modeling",
@@ -385,7 +381,8 @@ async def list_manuscripts(user: Dict[str, Any] = Depends(current_user)):
     out = []
     for it in items:
         full = await db.manuscripts.find_one({"manuscript_id": it["manuscript_id"]}, {"_id": 0, "sections": 1})
-        generated = sum(1 for s in (full or {}).get("sections", {}).values() if s.get("status") == "complete")
+        sections = (full or {}).get("sections", {})
+        generated = sum(1 for k in SECTION_KEYS if sections.get(k, {}).get("status") == "complete")
         it["generated_sections"] = generated
         it["total_sections"] = len(SECTION_KEYS)
         out.append(it)
@@ -500,10 +497,24 @@ Format:
 """,
         "abstract": """Produce a 200–250 word structured Abstract covering: (1) background/problem, (2) gap, (3) objective, (4) methodology, (5) key quantitative findings, (6) scientific significance, (7) practical contribution. No citations. No undefined abbreviations. No bullet points — single flowing paragraph.""",
         "keywords": """Provide 5–8 high-impact keywords aligned with WoS/Scopus indexing. Comma-separated, no commentary.""",
-        "introduction": """Write a critical, analytical Introduction (~800–1100 words). Establish global significance; cover recent (2021–2026) scientific developments; critically analyze prior work; expose unresolved problems; build a tight justification; explicitly state objectives and contributions in the final paragraph. Cite as [Author, Year] inline; verifiable references will be compiled in the References section.""",
+        "introduction": """Write a critical, analytical Introduction (~1100–1500 words) that ALSO contains a Research Gap subsection and a Novelty Statement subsection. Establish global significance; cover recent (2021–2026) scientific developments; critically analyze prior work; expose unresolved problems; build a tight justification.
+
+Structure (use these exact Markdown sub-headings — they will be auto-numbered by the exporter):
+### Background and motivation
+2–3 paragraphs of global significance, regulatory/industrial relevance, and recent scientific developments. Cite as [Author, Year] inline.
+
+### State of the art
+2 paragraphs critically analysing the most influential prior work and current limitations.
+
+### Research gap
+3–5 short paragraphs (or a bulleted breakdown) explicitly covering Technical, Methodological, Data, Industrial, Regional, and AI/Modeling gaps (omit any that genuinely don't apply). Each gap must be specific and justify the present study.
+
+### Novelty and contribution
+A focused 4–6 numbered list of novelty points that are specific, measurable, defensible, and publication-worthy.
+
+### Objectives
+Close with an explicit list of the study's primary and secondary objectives, plus a single-sentence statement of contribution.""",
         "literature_review": """Write a critical Literature Review (~900–1300 words). Synthesize, do not list. Group studies thematically. Compare strengths vs limitations. End with a sub-heading "### Comparative Synthesis" containing a Markdown comparison table with columns: Reference | Approach | Dataset / Setting | Key Finding | Limitation. Include at least 8 rows. Use inline [Author, Year] citations.""",
-        "research_gap": """Identify research gaps in 250–400 words across explicit sub-headings: Technical, Methodological, Data, Industrial, Regional, and AI/Modeling (if applicable). Each gap must be specific and justify the present study.""",
-        "novelty": """Write a Novelty Statement of 180–280 words. Make it specific, measurable, defensible, and publication-worthy. Use 4–6 numbered novelty points.""",
         "methodology": """Write a reproducible Methodology (~900–1200 words) covering: materials, equipment/software, datasets, preprocessing, calibration, algorithms, statistical techniques, uncertainty analysis, validation strategy. Use clear sub-headings (###). Include at least one equation rendered in LaTeX-style ($...$ or $$...$$).""",
         "experimental_setup": """Describe the Experimental Setup (~500–800 words). Include apparatus, instrumentation, operating conditions, sampling protocol, repeatability, and applicable standards. Add a Markdown table summarizing key parameters and ranges.""",
         "math_modeling": """Write a Mathematical / Statistical Modeling section (~600–900 words). Define variables; present governing equations in LaTeX (numbered (1), (2), ...); state assumptions; describe solver / estimation procedure; note convergence criteria.""",
