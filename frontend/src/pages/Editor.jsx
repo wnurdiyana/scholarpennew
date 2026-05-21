@@ -9,6 +9,7 @@ import {
 import api, { API } from "@/lib/api";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useAuth } from "@/context/AuthContext";
+import SectionChat from "@/components/SectionChat";
 
 const STATUS_META = {
   empty: { label: "Empty", color: "text-zinc-400" },
@@ -318,8 +319,25 @@ const Editor = () => {
                   </div>
                 ) : (
                   <div className="text-sm text-zinc-500 italic" data-testid={`section-empty-${c.key}`}>
-                    Section not generated yet. Click <strong>Generate</strong> to draft this section using Claude Sonnet 4.5.
+                    Section not generated yet. Click <strong>Generate</strong> to draft this section using Claude Opus 4.5.
                   </div>
+                )}
+
+                {!isEditing && (
+                  <SectionChat
+                    manuscriptId={id}
+                    sectionKey={c.key}
+                    sectionLabel={c.label}
+                    chat={s.chat || []}
+                    onSectionUpdated={(updatedSection) => {
+                      setDoc((d) => d && ({
+                        ...d,
+                        sections: { ...d.sections, [c.key]: updatedSection },
+                      }));
+                      setJustCompleted(c.key);
+                      setTimeout(() => setJustCompleted(null), 1500);
+                    }}
+                  />
                 )}
               </section>
             );

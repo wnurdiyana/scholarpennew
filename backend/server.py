@@ -163,6 +163,10 @@ class SectionGenerateIn(BaseModel):
     extra_instructions: Optional[str] = ""
 
 
+class SectionChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
 # ---------- Helpers ----------
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -351,7 +355,7 @@ async def google_session(payload: GoogleSessionIn):
 # ---------- Manuscripts ----------
 def _empty_sections() -> Dict[str, Dict[str, Any]]:
     return {
-        k: {"key": k, "label": SECTION_LABELS[k], "content": "", "status": "empty", "updated_at": None}
+        k: {"key": k, "label": SECTION_LABELS[k], "content": "", "status": "empty", "updated_at": None, "chat": []}
         for k in SECTION_KEYS
     }
 
@@ -607,6 +611,160 @@ async def generate_section(
 
     fresh = await db.manuscripts.find_one({"manuscript_id": mid}, {"_id": 0})
     return {"section": fresh["sections"][section_key], "manuscript_title": fresh.get("title")}
+
+
+# ---------- Section chat (iterative refinement) ----------
+SECTION_CHAT_SYSTEM = """You are an academic writing collaborator embedded in a Q1-grade manuscript editor. Your job is to help the author refine ONE specific section of their manuscript.
+
+You will receive: section context (the section name and its drafting brief), the author's structured research inputs, the CURRENT section content (Markdown), the conversation so far, and a new user message.
+
+Decide whether the user wants:
+(a) a discussion / question / advice → just reply conversationally; do not change content.
+(b) a content modification (rewrite, lengthen, shorten, add citations, change tone, focus on X, add a sub-section, fix a number, etc.) → produce the FULL revised section in clean Markdown, ready to replace the current content; also write a short reply explaining what you changed.
+
+ALWAYS reply with a single JSON object on a single line, no code fences, with EXACTLY this shape:
+{"reply": "<your conversational reply, 1-4 short sentences>", "updated_content": "<full revised Markdown for the section, or null>"}
+
+Rules:
+- If you choose (a), set "updated_content" to null. If (b), put the entire revised section Markdown there (NOT a diff, NOT a snippet — the full content the editor will save).
+- Preserve Q1-grade scholarly tone, evidence-based prose, and any factual constraints from the author's inputs.
+- Use `### Sub-heading` Markdown for subtopics (never bold paragraphs) so the exporter can number them.
+- Never fabricate DOIs or unrealistic numerical results.
+- Do NOT wrap the JSON in code fences. Do NOT prepend or append commentary.
+- The "reply" must be plain text, not Markdown.
+"""
+
+
+def _parse_chat_json(raw: str) -> Dict[str, Any]:
+    """Robustly extract {reply, updated_content} from the model output."""
+    import json as _json
+
+    text = (raw or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```[a-zA-Z]*\n?", "", text)
+        text = re.sub(r"\n?```$", "", text).strip()
+    # Try direct parse
+    try:
+        obj = _json.loads(text)
+        if isinstance(obj, dict):
+            return {
+                "reply": str(obj.get("reply", "") or "").strip(),
+                "updated_content": obj.get("updated_content") if isinstance(obj.get("updated_content"), str) else None,
+            }
+    except Exception:
+        pass
+    # Try to find the first {...} JSON object spanning the response
+    m = re.search(r"\{.*\}", text, re.DOTALL)
+    if m:
+        try:
+            obj = _json.loads(m.group(0))
+            if isinstance(obj, dict):
+                return {
+                    "reply": str(obj.get("reply", "") or "").strip(),
+                    "updated_content": obj.get("updated_content") if isinstance(obj.get("updated_content"), str) else None,
+                }
+        except Exception:
+            pass
+    # Fallback: treat the whole response as a chat reply, no content update
+    return {"reply": text[:1500], "updated_content": None}
+
+
+@api.post("/manuscripts/{mid}/sections/{section_key}/chat")
+async def section_chat(
+    mid: str,
+    section_key: str,
+    payload: SectionChatIn,
+    user: Dict[str, Any] = Depends(current_user),
+):
+    if section_key not in SECTION_KEYS:
+        raise HTTPException(status_code=400, detail="Unknown section key")
+    doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Manuscript not found")
+
+    section = doc["sections"].get(section_key, {})
+    chat_history: List[Dict[str, Any]] = section.get("chat") or []
+
+    # Build prompt
+    inputs = doc.get("inputs", {})
+    inputs_block = _format_inputs_block(inputs)
+    current_content = (section.get("content") or "").strip() or "_(this section has not been drafted yet)_"
+
+    # Trim chat history to the last 8 turns (16 messages) to control token usage.
+    recent = chat_history[-16:]
+    history_lines = []
+    for m in recent:
+        role = m.get("role", "user")
+        history_lines.append(f"[{role.upper()}] {m.get('content', '')}")
+    history_block = "\n".join(history_lines) if history_lines else "_(no prior turns)_"
+
+    section_spec_hint = SECTION_LABELS.get(section_key, section_key)
+    journal = inputs.get("journal_target") or "a high-impact Q1 WoS-indexed journal"
+    field = inputs.get("field") or "(unspecified field)"
+    citation_style = inputs.get("citation_style") or "APA"
+
+    prompt = f"""# Section being refined
+**{section_spec_hint}** — for a manuscript targeted at {journal} in the field of {field}. Citation style: {citation_style}.
+
+# Author's structured research inputs
+{inputs_block}
+
+# Current Markdown content of this section
+{current_content}
+
+# Conversation so far
+{history_block}
+
+# New user message
+{payload.message.strip()}
+
+Respond ONLY with the single-line JSON object specified in your system instructions.
+"""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"chat:{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
+            system_message=SECTION_CHAT_SYSTEM,
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        raw = await chat.send_message(UserMessage(text=prompt))
+        if not isinstance(raw, str):
+            raw = str(raw)
+    except Exception as exc:
+        logger.exception("Section chat failed")
+        raise HTTPException(status_code=502, detail=f"Chat failed: {exc}")
+
+    parsed = _parse_chat_json(raw)
+    reply_text = parsed["reply"] or "(no reply)"
+    updated = parsed["updated_content"]
+
+    now_iso = _iso(_now())
+    new_turns = [
+        {"role": "user", "content": payload.message.strip(), "ts": now_iso},
+        {"role": "assistant", "content": reply_text, "ts": now_iso, "applied_update": bool(updated)},
+    ]
+
+    update_set: Dict[str, Any] = {
+        f"sections.{section_key}.chat": (chat_history + new_turns)[-200:],
+        "updated_at": now_iso,
+    }
+    if updated:
+        # Strip accidental code fences from the content
+        c = updated.strip()
+        if c.startswith("```"):
+            c = re.sub(r"^```[a-zA-Z]*\n?", "", c)
+            c = re.sub(r"\n?```$", "", c).strip()
+        update_set[f"sections.{section_key}.content"] = c
+        update_set[f"sections.{section_key}.status"] = "complete"
+        update_set[f"sections.{section_key}.updated_at"] = now_iso
+
+    await db.manuscripts.update_one({"manuscript_id": mid}, {"$set": update_set})
+    fresh = await db.manuscripts.find_one({"manuscript_id": mid}, {"_id": 0})
+    return {
+        "section": fresh["sections"][section_key],
+        "reply": reply_text,
+        "content_updated": bool(updated),
+    }
 
 
 # ---------- References (Crossref) ----------
