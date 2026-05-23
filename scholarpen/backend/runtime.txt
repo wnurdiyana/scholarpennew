@@ -1,0 +1,2 @@
+# Used by Railway/Nixpacks Python detection — also useful for Render & Fly.
+python-3.11.10

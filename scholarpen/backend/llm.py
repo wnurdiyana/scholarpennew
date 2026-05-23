@@ -1,7 +1,7 @@
 """ScholarPen LLM client — direct Anthropic SDK wrapper.
 
 Centralizes Anthropic Messages API access so the rest of the server stays clean
-regardless of platform. No emergentintegrations / no proprietary wrappers.
+regardless of platform. Uses only the official `anthropic` Python SDK.
 """
 from __future__ import annotations
 

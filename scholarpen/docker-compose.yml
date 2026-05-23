@@ -1,0 +1,35 @@
+version: "3.9"
+
+# Local development — one-shot stack: Mongo + ScholarPen API + React dev server.
+# Frontend hot reload still requires `yarn start` outside docker for the best DX,
+# but everything is here if you want a single command.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - scholarpen_mongo:/data/db
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: scholarpen
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CORS_ORIGINS: "http://localhost:3000"
+      SCHOLARPEN_UPLOAD_ROOT: /data/uploads
+    ports:
+      - "8001:8001"
+    volumes:
+      - scholarpen_uploads:/data/uploads
+
+volumes:
+  scholarpen_mongo:
+  scholarpen_uploads:
