@@ -96,14 +96,15 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ---------- Config ----------
+print("ENVIRONMENT VARIABLES:")
+print(list(os.environ.keys()))
+
 MONGO_URL = os.environ.get("MONGO_URL")
 
 if not MONGO_URL:
     raise RuntimeError(
-        "MONGO_URL environment variable is missing"
+        f"MONGO_URL missing. Available vars: {list(os.environ.keys())}"
     )
-    print("MONGO_URL:", MONGO_URL[:30] + "...")
-print("DB_NAME:", DB_NAME)
 DB_NAME = os.environ.get("DB_NAME", "scholarpen")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
 JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
