@@ -96,12 +96,10 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ---------- Config ----------
-print("MONGO_URL:", repr(os.getenv("MONGO_URL")))
-print("DB_NAME:", repr(os.getenv("DB_NAME")))
-print("JWT_SECRET:", repr(os.getenv("JWT_SECRET")))
+MONGO_URL = os.environ.get("MONGO_URL")
 DB_NAME = os.environ.get("DB_NAME", "scholarpen")
+JWT_SECRET = os.environ.get("JWT_SECRET")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
-JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
 JWT_ALG = "HS256"
 JWT_EXPIRY_DAYS = 7
 
