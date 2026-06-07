@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+backend_test.py
+test_datalab.py
+test_section_chat.py
+_uploads/
