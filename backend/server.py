@@ -102,6 +102,8 @@ if not MONGO_URL:
     raise RuntimeError(
         "MONGO_URL environment variable is missing"
     )
+    print("MONGO_URL:", MONGO_URL[:30] + "...")
+print("DB_NAME:", DB_NAME)
 DB_NAME = os.environ.get("DB_NAME", "scholarpen")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
 JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
