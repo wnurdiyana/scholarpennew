@@ -96,7 +96,12 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ---------- Config ----------
-MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = os.environ.get("MONGO_URL")
+
+if not MONGO_URL:
+    raise RuntimeError(
+        "MONGO_URL environment variable is missing"
+    )
 DB_NAME = os.environ.get("DB_NAME", "scholarpen")
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
 JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
