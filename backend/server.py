@@ -31,7 +31,52 @@ from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
 # Optional integrations
-from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage  # type: ignore
+from litellm import completion
+
+class UserMessage:
+    def __init__(self, text: str, file_contents: List[Any] = None):
+        self.text = text
+        self.file_contents = file_contents or []
+
+class ImageContent:
+    def __init__(self, image_base64: str):
+        self.image_base64 = image_base64
+
+class LlmChat:
+    def __init__(self, api_key: str, session_id: str, system_message: str):
+        self.api_key = api_key
+        self.session_id = session_id
+        self.system_message = system_message
+        self.model = "anthropic/claude-3-5-sonnet-20240620"
+
+    def with_model(self, provider: str, model_id: str):
+        # Map provider to litellm format
+        prefix = "anthropic/" if provider == "anthropic" else ""
+        self.model = f"{prefix}{model_id}"
+        return self
+
+    async def send_message(self, message: UserMessage) -> str:
+        messages = [{"role": "system", "content": self.system_message}]
+
+        content = []
+        if message.text:
+            content.append({"type": "text", "text": message.text})
+
+        for file in message.file_contents:
+            if isinstance(file, ImageContent):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{file.image_base64}"}
+                })
+
+        messages.append({"role": "user", "content": content})
+
+        response = completion(
+            model=self.model,
+            messages=messages,
+            api_key=self.api_key
+        )
+        return response.choices[0].message.content
 
 from exporters import assemble_markdown, build_docx, build_pdf
 from datalab import (
