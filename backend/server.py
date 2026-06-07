@@ -96,10 +96,10 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ---------- Config ----------
-MONGO_URL = os.environ["MONGO_URL"]
-DB_NAME = os.environ["DB_NAME"]
-EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
-JWT_SECRET = os.environ["JWT_SECRET"]
+MONGO_URL = os.environ.get("MONGO_URL", "mongodb://localhost:27017")
+DB_NAME = os.environ.get("DB_NAME", "scholarpen")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
+JWT_SECRET = os.environ.get("JWT_SECRET", "default_secret")
 JWT_ALG = "HS256"
 JWT_EXPIRY_DAYS = 7
 
