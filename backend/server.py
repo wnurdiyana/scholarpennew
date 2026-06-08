@@ -31,73 +31,7 @@ from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
 # Optional integrations
-from litellm import completion
-
-class UserMessage:
-    def __init__(self, text: str, file_contents: List[Any] = None):
-        self.text = text
-        self.file_contents = file_contents or []
-
-class ImageContent:
-    def __init__(self, image_base64: str):
-        self.image_base64 = image_base64
-
-class LlmChat:
-    def __init__(self, api_key: str, session_id: str, system_message: str):
-        self.api_key = api_key
-        self.session_id = session_id
-        self.system_message = system_message
-        self.model = openrouter/anthropic/claude-opus-4
-
-    def with_model(self, provider: str, model_id: str):
-        # Map provider to litellm format
-        prefix = "anthropic/" if provider == "anthropic" else ""
-        self.model = f"{prefix}{model_id}"
-        return self
-
-async def send_message(self, message: UserMessage) -> str:
-    messages = [
-        {
-            "role": "system",
-            "content": self.system_message
-        }
-    ]
-
-    content = []
-
-    if message.text:
-        content.append({
-            "type": "text",
-            "text": message.text
-        })
-
-    for file in message.file_contents:
-        if isinstance(file, ImageContent):
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/jpeg;base64,{file.image_base64}"
-                }
-            })
-
-    messages.append({
-        "role": "user",
-        "content": content
-    })
-
-    response = completion(
-        model=self.model,
-        messages=messages,
-        api_key=self.api_key,
-        api_base="https://openrouter.ai/api/v1",
-        extra_headers={
-            "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
-            "X-Title": "ScholarPen"
-        }
-    )
-
-    return response.choices[0].message.content
-        
+from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage  # type: ignore
 
 from exporters import assemble_markdown, build_docx, build_pdf
 from datalab import (
@@ -117,10 +51,10 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 # ---------- Config ----------
-MONGO_URL = os.environ.get("MONGO_URL")
-DB_NAME = os.environ.get("DB_NAME", "scholarpen")
-JWT_SECRET = os.environ.get("JWT_SECRET")
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "default_key")
+MONGO_URL = os.environ["MONGO_URL"]
+DB_NAME = os.environ["DB_NAME"]
+EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
 JWT_EXPIRY_DAYS = 7
 
@@ -319,12 +253,18 @@ def _public_user(u: Dict[str, Any]) -> Dict[str, Any]:
         "name": u.get("name", ""),
         "picture": u.get("picture"),
         "auth_provider": u.get("auth_provider", "password"),
+        "download_quota": u.get("download_quota", 0),
+        "chat_quota": u.get("chat_quota", 0),
     }
 
 
 # ---------- Auth: JWT email/password ----------
 @api.post("/auth/register")
 async def register(payload: RegisterIn):
+    allowed = await db.allowed_users.find_one({"email": payload.email.lower()})
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Registration is restricted to authorized emails only.")
+
     existing = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="An account with this email already exists")
@@ -338,6 +278,8 @@ async def register(payload: RegisterIn):
         "picture": None,
         "password_hash": pw_hash,
         "auth_provider": "password",
+        "download_quota": allowed.get("download_quota", 0),
+        "chat_quota": allowed.get("chat_quota", 0),
         "created_at": _iso(_now()),
     }
     await db.users.insert_one(doc)
@@ -385,10 +327,17 @@ async def google_session(payload: GoogleSessionIn):
         raise HTTPException(status_code=401, detail="Invalid Google session")
     data = r.json()
     email = (data.get("email") or "").lower()
+    if not email:
+        raise HTTPException(status_code=502, detail="Bad upstream response")
+
+    allowed = await db.allowed_users.find_one({"email": email})
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access is restricted to authorized emails only.")
+
     name = data.get("name") or email.split("@")[0]
     picture = data.get("picture")
     session_token = data.get("session_token")
-    if not (email and session_token):
+    if not session_token:
         raise HTTPException(status_code=502, detail="Bad upstream response")
 
     # Upsert user
@@ -402,6 +351,8 @@ async def google_session(payload: GoogleSessionIn):
             "picture": picture,
             "auth_provider": "google",
             "password_hash": None,
+            "download_quota": allowed.get("download_quota", 0),
+            "chat_quota": allowed.get("chat_quota", 0),
             "created_at": _iso(_now()),
         }
         await db.users.insert_one(user)
@@ -657,31 +608,26 @@ async def generate_section(
     prompt = _section_prompt(section_key, doc, payload.extra_instructions or "")
 
     try:
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
-        system_message=SYSTEM_PROMPT,
-    )
-
-    chat.model = "openrouter/anthropic/claude-opus-4"
-
-    response_text = await chat.send_message(
-        UserMessage(text=prompt)
-    )
-
-    if not isinstance(response_text, str):
-        response_text = str(response_text)
-
-except Exception as exc:
-    logger.exception("LLM generation failed")
-    await db.manuscripts.update_one(
-        {"manuscript_id": mid},
-        {"$set": {f"sections.{section_key}.status": "error"}},
-    )
-    raise HTTPException(
-        status_code=502,
-        detail=f"Generation failed: {exc}"
-    )
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
+            system_message=SYSTEM_PROMPT,
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        response_text = await chat.send_message(UserMessage(text=prompt))
+        if not isinstance(response_text, str):
+            response_text = str(response_text)
+        response_text = response_text.strip()
+        # Strip accidental code fences
+        if response_text.startswith("```"):
+            response_text = re.sub(r"^```[a-zA-Z]*\n?", "", response_text)
+            response_text = re.sub(r"\n?```$", "", response_text)
+    except Exception as exc:
+        logger.exception("LLM generation failed")
+        await db.manuscripts.update_one(
+            {"manuscript_id": mid},
+            {"$set": {f"sections.{section_key}.status": "error"}},
+        )
+        raise HTTPException(status_code=502, detail=f"Generation failed: {exc}")
 
     await db.manuscripts.update_one(
         {"manuscript_id": mid},
@@ -771,6 +717,9 @@ async def section_chat(
     payload: SectionChatIn,
     user: Dict[str, Any] = Depends(current_user),
 ):
+    if user.get("chat_quota", 0) <= 0:
+        raise HTTPException(status_code=403, detail="AI Chat quota depleted.")
+
     if section_key not in SECTION_KEYS:
         raise HTTPException(status_code=400, detail="Unknown section key")
     doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
@@ -817,61 +766,52 @@ Respond ONLY with the single-line JSON object specified in your system instructi
 """
 
     try:
-       class LlmChat:
-    def __init__(self, api_key: str, session_id: str, system_message: str):
-        self.api_key = api_key
-        self.session_id = session_id
-        self.system_message = system_message
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"chat:{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
+            system_message=SECTION_CHAT_SYSTEM,
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        raw = await chat.send_message(UserMessage(text=prompt))
+        if not isinstance(raw, str):
+            raw = str(raw)
+    except Exception as exc:
+        logger.exception("Section chat failed")
+        raise HTTPException(status_code=502, detail=f"Chat failed: {exc}")
 
-        # Default OpenRouter Claude Opus
-        self.model = "openrouter/anthropic/claude-opus-4"
+    parsed = _parse_chat_json(raw)
+    reply_text = parsed["reply"] or "(no reply)"
+    updated = parsed["updated_content"]
 
-    def with_model(self, provider: str, model_id: str):
-        self.model = model_id
-        return self
+    now_iso = _iso(_now())
+    new_turns = [
+        {"role": "user", "content": payload.message.strip(), "ts": now_iso},
+        {"role": "assistant", "content": reply_text, "ts": now_iso, "applied_update": bool(updated)},
+    ]
 
-    async def send_message(self, message: UserMessage) -> str:
-        messages = [
-            {
-                "role": "system",
-                "content": self.system_message
-            }
-        ]
+    update_set: Dict[str, Any] = {
+        f"sections.{section_key}.chat": (chat_history + new_turns)[-200:],
+        "updated_at": now_iso,
+    }
+    if updated:
+        # Strip accidental code fences from the content
+        c = updated.strip()
+        if c.startswith("```"):
+            c = re.sub(r"^```[a-zA-Z]*\n?", "", c)
+            c = re.sub(r"\n?```$", "", c).strip()
+        update_set[f"sections.{section_key}.content"] = c
+        update_set[f"sections.{section_key}.status"] = "complete"
+        update_set[f"sections.{section_key}.updated_at"] = now_iso
 
-        content = []
-
-        if message.text:
-            content.append({
-                "type": "text",
-                "text": message.text
-            })
-
-        for file in message.file_contents:
-            if isinstance(file, ImageContent):
-                content.append({
-                    "type": "image_url",
-                    "image_url": {
-                        "url": f"data:image/jpeg;base64,{file.image_base64}"
-                    }
-                })
-
-        messages.append({
-            "role": "user",
-            "content": content
-        })
-
-        response = completion(
-            model=self.model,
-            messages=messages,
-            api_key=self.api_key,
-            api_base="https://openrouter.ai/api/v1",
-            extra_headers={
-                "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
-                "X-Title": "ScholarPen"
-            }
-        )
-
-        return response.choices[0].message.content
+    await db.manuscripts.update_one({"manuscript_id": mid}, {"$set": update_set})
+    # Decrement chat quota
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"chat_quota": -1}})
+    
+    fresh = await db.manuscripts.find_one({"manuscript_id": mid}, {"_id": 0})
+    return {
+        "section": fresh["sections"][section_key],
+        "reply": reply_text,
+        "content_updated": bool(updated),
+    }
 
 
 # ---------- Data Lab: dataset upload, suggestions, plotting, figure critique ----------
@@ -973,10 +913,7 @@ Return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"datasuggest:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=DATA_SUGGEST_SYSTEM,
-        ).with_model(
-    "openrouter",
-    "openrouter/anthropic/claude-opus-4"
-)
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
         raw = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -1074,10 +1011,7 @@ Critique the uploaded figure and return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"figcritique:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=FIGURE_CRITIQUE_SYSTEM,
-        )..with_model(
-    "openrouter",
-    "openrouter/anthropic/claude-opus-4"
-)
+        ).with_model("anthropic", "claude-opus-4-5-20251101")
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)]))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -1177,9 +1111,14 @@ async def reference_search(q: str = Query(..., min_length=2), rows: int = 10, us
 # ---------- Export ----------
 @api.get("/manuscripts/{mid}/export")
 async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str, Any] = Depends(current_user)):
+    if user.get("download_quota", 0) <= 0:
+        raise HTTPException(status_code=402, detail="Download quota depleted.")
+
     doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Manuscript not found")
+        
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"download_quota": -1}})
 
     fmt = format.lower()
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", (doc.get("title") or "manuscript"))[:60] or "manuscript"
@@ -1207,6 +1146,23 @@ async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str,
         )
     raise HTTPException(status_code=400, detail="Unsupported format. Use md, docx, or pdf.")
 
+
+# ---------- Admin ----------
+class AllowEmailIn(BaseModel):
+    email: EmailStr
+    download_quota: int = 1
+    chat_quota: int = 10
+
+@api.post("/admin/allow-email")
+async def admin_allow_email(payload: AllowEmailIn, admin_secret: str = Header(...)):
+    if admin_secret != os.environ.get("ADMIN_SECRET", "default-insecure-secret"):
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+    await db.allowed_users.update_one(
+        {"email": payload.email.lower()},
+        {"$set": {"download_quota": payload.download_quota, "chat_quota": payload.chat_quota}},
+        upsert=True
+    )
+    return {"ok": True, "email": payload.email.lower()}
 
 # ---------- Misc ----------
 @api.get("/")
