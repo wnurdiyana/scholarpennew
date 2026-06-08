@@ -71,11 +71,16 @@ class LlmChat:
 
         messages.append({"role": "user", "content": content})
 
-        response = completion(
-            model=self.model,
-            messages=messages,
-            api_key=self.api_key
-        )
+     response = completion(
+    model=self.model,
+    messages=messages,
+    api_key=self.api_key,
+    api_base="https://openrouter.ai/api/v1",
+    extra_headers={
+        "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
+        "X-Title": "ScholarPen"
+    }
+)
         return response.choices[0].message.content
 
 from exporters import assemble_markdown, build_docx, build_pdf
