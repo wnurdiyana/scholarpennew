@@ -55,33 +55,49 @@ class LlmChat:
         self.model = f"{prefix}{model_id}"
         return self
 
-    async def send_message(self, message: UserMessage) -> str:
-        messages = [{"role": "system", "content": self.system_message}]
+async def send_message(self, message: UserMessage) -> str:
+    messages = [
+        {
+            "role": "system",
+            "content": self.system_message
+        }
+    ]
 
-        content = []
-        if message.text:
-            content.append({"type": "text", "text": message.text})
+    content = []
 
-        for file in message.file_contents:
-            if isinstance(file, ImageContent):
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/jpeg;base64,{file.image_base64}"}
-                })
+    if message.text:
+        content.append({
+            "type": "text",
+            "text": message.text
+        })
 
-        messages.append({"role": "user", "content": content})
+    for file in message.file_contents:
+        if isinstance(file, ImageContent):
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{file.image_base64}"
+                }
+            })
 
-     response = completion(
-    model=self.model,
-    messages=messages,
-    api_key=self.api_key,
-    api_base="https://openrouter.ai/api/v1",
-    extra_headers={
-        "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
-        "X-Title": "ScholarPen"
-    }
-)
-        return response.choices[0].message.content
+    messages.append({
+        "role": "user",
+        "content": content
+    })
+
+    response = completion(
+        model=self.model,
+        messages=messages,
+        api_key=self.api_key,
+        api_base="https://openrouter.ai/api/v1",
+        extra_headers={
+            "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
+            "X-Title": "ScholarPen"
+        }
+    )
+
+    return response.choices[0].message.content
+        
 
 from exporters import assemble_markdown, build_docx, build_pdf
 from datalab import (
