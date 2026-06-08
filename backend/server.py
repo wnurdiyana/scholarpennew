@@ -31,7 +31,53 @@ from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.cors import CORSMiddleware
 
 # Optional integrations
-from emergentintegrations.llm.chat import ImageContent, LlmChat, UserMessage  # type: ignore
+from litellm import acompletion
+
+class ImageContent:
+    def __init__(self, image_base64: str):
+        self.image_base64 = image_base64
+
+class UserMessage:
+    def __init__(self, text: str, file_contents: List[Any] = None):
+        self.text = text
+        self.file_contents = file_contents or []
+
+class LlmChat:
+    def __init__(self, api_key: str, session_id: str, system_message: str):
+        self.api_key = api_key
+        self.session_id = session_id
+        self.system_message = system_message
+        self.model = "openrouter/anthropic/claude-opus-4"
+
+    def with_model(self, provider: str, model_id: str):
+        self.model = "openrouter/anthropic/claude-opus-4"
+        return self
+
+    async def send_message(self, message: UserMessage) -> str:
+        messages = [{"role": "system", "content": self.system_message}]
+        content = []
+        if message.text:
+            content.append({"type": "text", "text": message.text})
+        for file in message.file_contents:
+            if isinstance(file, ImageContent):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{file.image_base64}"}
+                })
+        if content:
+            messages.append({"role": "user", "content": content})
+            
+        response = await acompletion(
+            model=self.model,
+            messages=messages,
+            api_key=self.api_key,
+            api_base="https://openrouter.ai/api/v1",
+            extra_headers={
+                "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
+                "X-Title": "ScholarPen"
+            }
+        )
+        return response.choices[0].message.content
 
 from exporters import assemble_markdown, build_docx, build_pdf
 from datalab import (
@@ -53,7 +99,7 @@ load_dotenv(ROOT_DIR / ".env")
 # ---------- Config ----------
 MONGO_URL = os.environ["MONGO_URL"]
 DB_NAME = os.environ["DB_NAME"]
-EMERGENT_LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 JWT_SECRET = os.environ["JWT_SECRET"]
 JWT_ALG = "HS256"
 JWT_EXPIRY_DAYS = 7
@@ -259,6 +305,10 @@ def _public_user(u: Dict[str, Any]) -> Dict[str, Any]:
 # ---------- Auth: JWT email/password ----------
 @api.post("/auth/register")
 async def register(payload: RegisterIn):
+    allowed = await db.allowed_emails.find_one({"email": payload.email.lower()})
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Email not authorized. Please purchase access first.")
+
     existing = await db.users.find_one({"email": payload.email.lower()}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="An account with this email already exists")
@@ -324,6 +374,10 @@ async def google_session(payload: GoogleSessionIn):
     session_token = data.get("session_token")
     if not (email and session_token):
         raise HTTPException(status_code=502, detail="Bad upstream response")
+
+    allowed = await db.allowed_emails.find_one({"email": email})
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Email not authorized. Please purchase access first.")
 
     # Upsert user
     user = await db.users.find_one({"email": email}, {"_id": 0})
@@ -592,10 +646,10 @@ async def generate_section(
 
     try:
         chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+            api_key=OPENROUTER_API_KEY,
             session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
             system_message=SYSTEM_PROMPT,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        )
         response_text = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(response_text, str):
             response_text = str(response_text)
@@ -747,10 +801,10 @@ Respond ONLY with the single-line JSON object specified in your system instructi
 
     try:
         chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+            api_key=OPENROUTER_API_KEY,
             session_id=f"chat:{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
             system_message=SECTION_CHAT_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        )
         raw = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -887,10 +941,10 @@ Return the strict JSON object now."""
 
     try:
         chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+            api_key=OPENROUTER_API_KEY,
             session_id=f"datasuggest:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=DATA_SUGGEST_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        )
         raw = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -985,10 +1039,10 @@ Critique the uploaded figure and return the strict JSON object now."""
 
     try:
         chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
+            api_key=OPENROUTER_API_KEY,
             session_id=f"figcritique:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=FIGURE_CRITIQUE_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        )
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)]))
         if not isinstance(raw, str):
             raw = str(raw)

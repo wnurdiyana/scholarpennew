@@ -106,7 +106,7 @@ export const Register = () => {
   };
 
   return (
-    <AuthShell title="Create account" subtitle="Start drafting Q1-grade manuscripts in minutes.">
+    <AuthShell title="Create account" subtitle="Registration is invite-only. Please use the email you purchased access with.">
       <form onSubmit={submit} className="space-y-5" data-testid="register-form">
         <div>
           <label className="text-xs font-mono uppercase tracking-widest text-zinc-500">Full name</label>
