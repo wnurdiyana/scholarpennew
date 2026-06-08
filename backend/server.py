@@ -47,10 +47,10 @@ class LlmChat:
         self.api_key = api_key
         self.session_id = session_id
         self.system_message = system_message
-        self.model = "openrouter/anthropic/claude-sonnet-4"
+        self.model = "openrouter/google/gemini-2.5-flash"
 
     def with_model(self, provider: str, model_id: str):
-        self.model = "openrouter/anthropic/claude-sonnet-4"
+        self.model = "openrouter/google/gemini-2.5-flash"
         return self
 
     async def send_message(self, message: UserMessage) -> str:
