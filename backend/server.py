@@ -299,6 +299,8 @@ def _public_user(u: Dict[str, Any]) -> Dict[str, Any]:
         "name": u.get("name", ""),
         "picture": u.get("picture"),
         "auth_provider": u.get("auth_provider", "password"),
+        "download_quota": u.get("download_quota", 0),
+        "chat_quota": u.get("chat_quota", 0),
     }
 
 
@@ -322,6 +324,8 @@ async def register(payload: RegisterIn):
         "picture": None,
         "password_hash": pw_hash,
         "auth_provider": "password",
+        "download_quota": allowed.get("download_quota", 0),
+        "chat_quota": allowed.get("chat_quota", 0),
         "created_at": _iso(_now()),
     }
     await db.users.insert_one(doc)
@@ -369,10 +373,17 @@ async def google_session(payload: GoogleSessionIn):
         raise HTTPException(status_code=401, detail="Invalid Google session")
     data = r.json()
     email = (data.get("email") or "").lower()
+    if not email:
+        raise HTTPException(status_code=502, detail="Bad upstream response")
+
+    allowed = await db.allowed_users.find_one({"email": email})
+    if not allowed:
+        raise HTTPException(status_code=403, detail="Access is restricted to authorized emails only.")
+
     name = data.get("name") or email.split("@")[0]
     picture = data.get("picture")
     session_token = data.get("session_token")
-    if not (email and session_token):
+    if not session_token:
         raise HTTPException(status_code=502, detail="Bad upstream response")
 
     allowed = await db.allowed_emails.find_one({"email": email})
@@ -390,6 +401,8 @@ async def google_session(payload: GoogleSessionIn):
             "picture": picture,
             "auth_provider": "google",
             "password_hash": None,
+            "download_quota": allowed.get("download_quota", 0),
+            "chat_quota": allowed.get("chat_quota", 0),
             "created_at": _iso(_now()),
         }
         await db.users.insert_one(user)
@@ -754,6 +767,9 @@ async def section_chat(
     payload: SectionChatIn,
     user: Dict[str, Any] = Depends(current_user),
 ):
+    if user.get("chat_quota", 0) <= 0:
+        raise HTTPException(status_code=403, detail="AI Chat quota depleted.")
+
     if section_key not in SECTION_KEYS:
         raise HTTPException(status_code=400, detail="Unknown section key")
     doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
@@ -837,6 +853,9 @@ Respond ONLY with the single-line JSON object specified in your system instructi
         update_set[f"sections.{section_key}.updated_at"] = now_iso
 
     await db.manuscripts.update_one({"manuscript_id": mid}, {"$set": update_set})
+    # Decrement chat quota
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"chat_quota": -1}})
+    
     fresh = await db.manuscripts.find_one({"manuscript_id": mid}, {"_id": 0})
     return {
         "section": fresh["sections"][section_key],
@@ -1142,9 +1161,14 @@ async def reference_search(q: str = Query(..., min_length=2), rows: int = 10, us
 # ---------- Export ----------
 @api.get("/manuscripts/{mid}/export")
 async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str, Any] = Depends(current_user)):
+    if user.get("download_quota", 0) <= 0:
+        raise HTTPException(status_code=402, detail="Download quota depleted.")
+
     doc = await db.manuscripts.find_one({"manuscript_id": mid, "user_id": user["user_id"]}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Manuscript not found")
+        
+    await db.users.update_one({"user_id": user["user_id"]}, {"$inc": {"download_quota": -1}})
 
     fmt = format.lower()
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "_", (doc.get("title") or "manuscript"))[:60] or "manuscript"
@@ -1172,6 +1196,23 @@ async def export_manuscript(mid: str, format: str = Query("md"), user: Dict[str,
         )
     raise HTTPException(status_code=400, detail="Unsupported format. Use md, docx, or pdf.")
 
+
+# ---------- Admin ----------
+class AllowEmailIn(BaseModel):
+    email: EmailStr
+    download_quota: int = 1
+    chat_quota: int = 10
+
+@api.post("/admin/allow-email")
+async def admin_allow_email(payload: AllowEmailIn, admin_secret: str = Header(...)):
+    if admin_secret != os.environ.get("ADMIN_SECRET", "default-insecure-secret"):
+        raise HTTPException(status_code=403, detail="Invalid admin secret")
+    await db.allowed_users.update_one(
+        {"email": payload.email.lower()},
+        {"$set": {"download_quota": payload.download_quota, "chat_quota": payload.chat_quota}},
+        upsert=True
+    )
+    return {"ok": True, "email": payload.email.lower()}
 
 # ---------- Misc ----------
 @api.get("/")
