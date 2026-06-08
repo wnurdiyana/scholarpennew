@@ -47,7 +47,7 @@ class LlmChat:
         self.api_key = api_key
         self.session_id = session_id
         self.system_message = system_message
-        self.model = "anthropic/claude-3-5-sonnet-20240620"
+        self.model = openrouter/anthropic/claude-opus-4
 
     def with_model(self, provider: str, model_id: str):
         # Map provider to litellm format
@@ -798,49 +798,61 @@ Respond ONLY with the single-line JSON object specified in your system instructi
 """
 
     try:
-        chat = LlmChat(
-            api_key=EMERGENT_LLM_KEY,
-            session_id=f"chat:{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
-            system_message=SECTION_CHAT_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
-        raw = await chat.send_message(UserMessage(text=prompt))
-        if not isinstance(raw, str):
-            raw = str(raw)
-    except Exception as exc:
-        logger.exception("Section chat failed")
-        raise HTTPException(status_code=502, detail=f"Chat failed: {exc}")
+       class LlmChat:
+    def __init__(self, api_key: str, session_id: str, system_message: str):
+        self.api_key = api_key
+        self.session_id = session_id
+        self.system_message = system_message
 
-    parsed = _parse_chat_json(raw)
-    reply_text = parsed["reply"] or "(no reply)"
-    updated = parsed["updated_content"]
+        # Default OpenRouter Claude Opus
+        self.model = "openrouter/anthropic/claude-opus-4"
 
-    now_iso = _iso(_now())
-    new_turns = [
-        {"role": "user", "content": payload.message.strip(), "ts": now_iso},
-        {"role": "assistant", "content": reply_text, "ts": now_iso, "applied_update": bool(updated)},
-    ]
+    def with_model(self, provider: str, model_id: str):
+        self.model = model_id
+        return self
 
-    update_set: Dict[str, Any] = {
-        f"sections.{section_key}.chat": (chat_history + new_turns)[-200:],
-        "updated_at": now_iso,
-    }
-    if updated:
-        # Strip accidental code fences from the content
-        c = updated.strip()
-        if c.startswith("```"):
-            c = re.sub(r"^```[a-zA-Z]*\n?", "", c)
-            c = re.sub(r"\n?```$", "", c).strip()
-        update_set[f"sections.{section_key}.content"] = c
-        update_set[f"sections.{section_key}.status"] = "complete"
-        update_set[f"sections.{section_key}.updated_at"] = now_iso
+    async def send_message(self, message: UserMessage) -> str:
+        messages = [
+            {
+                "role": "system",
+                "content": self.system_message
+            }
+        ]
 
-    await db.manuscripts.update_one({"manuscript_id": mid}, {"$set": update_set})
-    fresh = await db.manuscripts.find_one({"manuscript_id": mid}, {"_id": 0})
-    return {
-        "section": fresh["sections"][section_key],
-        "reply": reply_text,
-        "content_updated": bool(updated),
-    }
+        content = []
+
+        if message.text:
+            content.append({
+                "type": "text",
+                "text": message.text
+            })
+
+        for file in message.file_contents:
+            if isinstance(file, ImageContent):
+                content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{file.image_base64}"
+                    }
+                })
+
+        messages.append({
+            "role": "user",
+            "content": content
+        })
+
+        response = completion(
+            model=self.model,
+            messages=messages,
+            api_key=self.api_key,
+            api_base="https://openrouter.ai/api/v1",
+            extra_headers={
+                "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
+                "X-Title": "ScholarPen"
+            }
+        )
+
+        return response.choices[0].message.content
 
 
 # ---------- Data Lab: dataset upload, suggestions, plotting, figure critique ----------
@@ -942,7 +954,7 @@ Return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"datasuggest:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=DATA_SUGGEST_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        ).with_model("openrouter", "openrouter/anthropic/claude-opus-4")
         raw = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -1040,7 +1052,7 @@ Critique the uploaded figure and return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"figcritique:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=FIGURE_CRITIQUE_SYSTEM,
-        ).with_model("anthropic", "claude-opus-4-5-20251101")
+        ).with_model("openrouter", "openrouter/anthropic/claude-opus-4")
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)]))
         if not isinstance(raw, str):
             raw = str(raw)
