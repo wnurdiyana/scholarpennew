@@ -657,28 +657,31 @@ async def generate_section(
     prompt = _section_prompt(section_key, doc, payload.extra_instructions or "")
 
     try:
-        chat = LlmChat(
-    api_key=EMERGENT_LLM_KEY,
-    session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
-    system_message=SYSTEM_PROMPT,
-)
+    chat = LlmChat(
+        api_key=EMERGENT_LLM_KEY,
+        session_id=f"{mid}:{section_key}:{uuid.uuid4().hex[:6]}",
+        system_message=SYSTEM_PROMPT,
+    )
 
-chat.model = "openrouter/anthropic/claude-opus-4"
-        response_text = await chat.send_message(UserMessage(text=prompt))
-        if not isinstance(response_text, str):
-            response_text = str(response_text)
-        response_text = response_text.strip()
-        # Strip accidental code fences
-        if response_text.startswith("```"):
-            response_text = re.sub(r"^```[a-zA-Z]*\n?", "", response_text)
-            response_text = re.sub(r"\n?```$", "", response_text)
-    except Exception as exc:
-        logger.exception("LLM generation failed")
-        await db.manuscripts.update_one(
-            {"manuscript_id": mid},
-            {"$set": {f"sections.{section_key}.status": "error"}},
-        )
-        raise HTTPException(status_code=502, detail=f"Generation failed: {exc}")
+    chat.model = "openrouter/anthropic/claude-opus-4"
+
+    response_text = await chat.send_message(
+        UserMessage(text=prompt)
+    )
+
+    if not isinstance(response_text, str):
+        response_text = str(response_text)
+
+except Exception as exc:
+    logger.exception("LLM generation failed")
+    await db.manuscripts.update_one(
+        {"manuscript_id": mid},
+        {"$set": {f"sections.{section_key}.status": "error"}},
+    )
+    raise HTTPException(
+        status_code=502,
+        detail=f"Generation failed: {exc}"
+    )
 
     await db.manuscripts.update_one(
         {"manuscript_id": mid},
@@ -970,7 +973,10 @@ Return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"datasuggest:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=DATA_SUGGEST_SYSTEM,
-        ).with_model("openrouter", "openrouter/anthropic/claude-opus-4")
+        ).with_model(
+    "openrouter",
+    "openrouter/anthropic/claude-opus-4"
+)
         raw = await chat.send_message(UserMessage(text=prompt))
         if not isinstance(raw, str):
             raw = str(raw)
@@ -1068,7 +1074,10 @@ Critique the uploaded figure and return the strict JSON object now."""
             api_key=EMERGENT_LLM_KEY,
             session_id=f"figcritique:{mid}:{uuid.uuid4().hex[:6]}",
             system_message=FIGURE_CRITIQUE_SYSTEM,
-        ).with_model("openrouter", "openrouter/anthropic/claude-opus-4")
+        )..with_model(
+    "openrouter",
+    "openrouter/anthropic/claude-opus-4"
+)
         raw = await chat.send_message(UserMessage(text=prompt, file_contents=[ImageContent(image_base64=image_b64)]))
         if not isinstance(raw, str):
             raw = str(raw)
