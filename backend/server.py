@@ -47,10 +47,10 @@ class LlmChat:
         self.api_key = api_key
         self.session_id = session_id
         self.system_message = system_message
-        self.model = "openrouter/anthropic/claude-opus-4"
+        self.model = "openrouter/anthropic/claude-sonnet-4"
 
     def with_model(self, provider: str, model_id: str):
-        self.model = "openrouter/anthropic/claude-opus-4"
+        self.model = "openrouter/anthropic/claude-sonnet-4"
         return self
 
     async def send_message(self, message: UserMessage) -> str:
@@ -72,6 +72,8 @@ class LlmChat:
             messages=messages,
             api_key=self.api_key,
             api_base="https://openrouter.ai/api/v1",
+            max_tokens=2500,
+            temperature=0.7,
             extra_headers={
                 "HTTP-Referer": "https://scholarpennew-o139.vercel.app",
                 "X-Title": "ScholarPen"
